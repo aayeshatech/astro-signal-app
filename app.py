@@ -1,59 +1,81 @@
 import streamlit as st
-import pandas as pd
 from datetime import datetime, timedelta
+import pandas as pd
 
-# === Simulated Astro Data Function (Mimics DeepSeek AI Output) ===
-def get_astro_report(date_str, start_time, end_time, symbol):
-    # Simulated transitions during the day
-    transitions = [
-        ("09:15", "10:03", "Moon", "Pushya", "Moon-Sun", "🟢 Bullish", "Mild upmove", "Buy on dips"),
-        ("10:03", "10:58", "Sun", "Pushya", "Moon-Venus", "🔴 Bearish", "Sudden drop", "Avoid longs"),
-        ("10:58", "11:33", "Mars", "Pushya", "Moon-Mars", "🟠 Neutral", "Volatile", "Wait"),
-        ("11:33", "12:43", "Rahu", "Pushya", "Moon-Rahu", "🔴 Bearish", "False breakout", "Hedge"),
-        ("12:43", "13:49", "Jupiter", "Pushya", "Moon-Jupiter", "🟢 Bullish", "Index rally", "Go long"),
-        ("13:49", "14:55", "Saturn", "Ashlesha", "Moon-Saturn", "🟠 Choppy", "Sideways", "Stay flat"),
-        ("14:55", "15:30", "Mercury", "Ashlesha", "Mercury Retro", "🔴 Bearish", "Drop likely", "Avoid trade"),
-    ]
+# ========== Page Setup ==========
+st.set_page_config(page_title="🔭 Astro Market Insight", layout="wide")
 
-    report_data = []
-    for t in transitions:
-        from_time = datetime.strptime(f"{date_str} {t[0]}", "%Y-%m-%d %H:%M")
-        to_time = datetime.strptime(f"{date_str} {t[1]}", "%Y-%m-%d %H:%M")
-        if from_time.time() >= start_time and to_time.time() <= end_time:
-            report_data.append({
-                "Time": f"{t[0]} – {t[1]}",
-                "Sub-Lord": t[2],
-                "Nakshatra": t[3],
-                "Aspect": t[4],
-                "Sentiment": t[5],
-                "Market Move": t[6],
-                "Bias": t[7]
-            })
+st.title("🔮 Astro Market Timeline – DeepSeek Simulated Report")
 
-    return pd.DataFrame(report_data)
+# ========== User Inputs ==========
+col1, col2, col3 = st.columns(3)
 
-# === Streamlit UI ===
-st.set_page_config("🔭 Astro Market Report", layout="wide")
-
-st.title("🔭 Astro Market Intraday Report")
-st.markdown("Get planetary sentiment breakdown from DeepSeek-style logic for Nifty, Bank Nifty, Gold, etc.")
-
-# Input widgets
-selected_date = st.date_input("📅 Select Date", value=datetime.today())
-col1, col2 = st.columns(2)
 with col1:
-    start_str = st.time_input("🕒 Start Time", value=datetime.strptime("09:15", "%H:%M").time())
+    selected_date = st.date_input("📅 Select Date", datetime(2025, 7, 25))
+
 with col2:
-    end_str = st.time_input("🕓 End Time", value=datetime.strptime("15:30", "%H:%M").time())
+    start_time = st.time_input("⏰ Start Time", datetime.strptime("09:15", "%H:%M").time())
 
-symbol = st.text_input("📈 Enter Stock/Index (e.g., Nifty, BankNifty, Gold)", value="Nifty")
+with col3:
+    end_time = st.time_input("⏰ End Time", datetime.strptime("15:30", "%H:%M").time())
 
-# Button to trigger search
-if st.button("🔍 Get Astro Market Report"):
-    with st.spinner("Fetching planetary transitions..."):
-        df = get_astro_report(str(selected_date), start_str, end_str, symbol)
-        if not df.empty:
-            st.success(f"Showing astro report for {symbol} on {selected_date}")
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.warning("No transitions found for selected time range.")
+symbol = st.selectbox("📈 Select Stock / Index", ["Nifty", "Bank Nifty", "Gold", "Crude", "BTC", "Dow Jones"])
+
+# ========== Simulated DeepSeek Report (Mock Astro Data) ==========
+astro_data = [
+    ("00:51", "04:43", "Venus (Ve)", "Pushya (Sa)", "Moon-Venus influence", "🟢 Bullish", "Steady upside, banking stocks strong", "Buy on dips"),
+    ("04:43", "05:53", "Sun (Su)", "Pushya (Sa)", "Moon-Sun volatility", "🔴 Bearish", "Risk of gap-down or sudden drop", "Avoid new longs"),
+    ("05:53", "07:50", "Moon (Mo)", "Pushya (Sa)", "Emotional stability", "🟢 Bullish", "Recovery possible, good for intraday longs", "Short-term longs"),
+    ("07:50", "09:12", "Mars (Ma)", "Pushya (Sa)", "Aggressive moves", "🟠 Neutral", "Volatile swings, no clear direction", "Wait for confirmation"),
+    ("09:12", "12:43", "Rahu (Ra)", "Pushya (Sa)", "Rahu manipulation", "🔴 Bearish", "Sharp corrections, false breakouts likely", "Caution – Hedge"),
+    ("12:43", "15:51", "Jupiter (Ju)", "Pushya (Sa)", "Optimism, expansion", "🟢 Bullish", "Rally in heavyweights (HDFC, ICICI, RIL)", "Best for longs"),
+    ("15:51", "17:52", "Ketu (Ke)", "Ashlesha (Me)", "Mercury Retrograde starts", "🔴 Bearish", "Panic selling, sudden drops", "Avoid trades"),
+    ("17:52", "23:59", "Ketu (Ke)", "Ashlesha (Me)", "Declination weakens", "🟠 Choppy", "Sideways close, low volumes", "Stay flat")
+]
+
+# ========== Filter Logic ==========
+filtered_data = []
+summary_long = []
+summary_short = []
+
+for entry in astro_data:
+    start_str, end_str, *rest = entry
+    t_start = datetime.combine(selected_date, datetime.strptime(start_str, "%H:%M").time())
+    t_end = datetime.combine(selected_date, datetime.strptime(end_str, "%H:%M").time())
+
+    user_start = datetime.combine(selected_date, start_time)
+    user_end = datetime.combine(selected_date, end_time)
+
+    if t_end >= user_start and t_start <= user_end:
+        filtered_data.append((start_str + " – " + end_str, *rest))
+
+        # Summary logic
+        sentiment = rest[3]
+        if sentiment == "🟢 Bullish":
+            summary_long.append((start_str + " – " + end_str, rest[2], rest[3]))
+        elif sentiment == "🔴 Bearish":
+            summary_short.append((start_str + " – " + end_str, rest[2], rest[3]))
+
+# ========== Display Table ==========
+st.markdown(f"### 📊 Astro Timeline for {symbol} on {selected_date.strftime('%d-%b-%Y')}")
+if filtered_data:
+    df = pd.DataFrame(filtered_data, columns=[
+        "Time", "Moon’s Sub-Lord", "Nakshatra", "Planetary Aspect",
+        "Sentiment", "Expected Market Move", "Trading Bias"
+    ])
+    st.dataframe(df, use_container_width=True)
+
+    # ===== Summary Section =====
+    st.markdown("---")
+    st.markdown("### 🟩 Best Bullish Time Window")
+    for time, aspect, senti in summary_long:
+        st.markdown(f"- 🕒 `{time}` → {senti} ({aspect})")
+
+    st.markdown("### 🟥 Best Bearish Time Window")
+    for time, aspect, senti in summary_short:
+        st.markdown(f"- 🕒 `{time}` → {senti} ({aspect})")
+else:
+    st.warning("No astro data found for the selected time range.")
+
+# ========== Footer ==========
+st.caption("This is a simulated DeepSeek AI report based on planetary transits. Actual real-time AI integration coming soon.")
