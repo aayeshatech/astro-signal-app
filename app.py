@@ -1,137 +1,104 @@
 import streamlit as st
 import swisseph as swe
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 import pytz
 
-# === Setup ===
-LAT, LON = 19.0760, 72.8777
-TZ = pytz.timezone("Asia/Kolkata")
-swe.set_ephe_path('/usr/share/ephe')
+# Ephemeris config
+swe.set_ephe_path('/usr/share/ephe')  # Set path to ephemeris files
+INDIA_TZ = pytz.timezone("Asia/Kolkata")
 
-st.set_page_config(page_title="🌙 Astro Timeline", layout="wide")
-st.title("🌙 Moon Nakshatra + Lords + Aspect Signal Timeline")
+# === Function to get Moon Nakshatra & Lords ===
+def get_moon_details(jd):
+    moon_long = swe.calc_ut(jd, swe.MOON)[0]
+    sign_lord = int(moon_long // 30)
+    nak_index = int((moon_long % 30) // (13 + 1/3))
+    sublord = int((moon_long % (13 + 1/3)) // ((13 + 1/3) / 9))
+    return moon_long, sign_lord, nak_index, sublord
 
-selected_date = st.date_input("📅 Select Date", value=datetime(2025, 7, 14))
-symbol = st.selectbox("📈 Select Symbol", ["NIFTY", "Bank NIFTY", "GOLD", "CRUDE", "BTC", "DOW JONES"])
+# === Planetary Aspect Logic ===
+def check_aspects(jd):
+    events = []
+    planets = [swe.SUN, swe.MOON, swe.MERCURY, swe.VENUS, swe.MARS, swe.JUPITER, swe.SATURN]
+    names = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn']
+    for i, p1 in enumerate(planets):
+        lon1 = swe.calc_ut(jd, p1)[0]
+        for j, p2 in enumerate(planets):
+            if i >= j:
+                continue
+            lon2 = swe.calc_ut(jd, p2)[0]
+            diff = abs(lon1 - lon2) % 360
+            if abs(diff - 0) < 1:
+                events.append((names[i], names[j], 'Conjunct', '🔴 Bearish'))
+            elif abs(diff - 60) < 1:
+                events.append((names[i], names[j], 'Sextile', '🟢 Bullish'))
+            elif abs(diff - 90) < 1:
+                events.append((names[i], names[j], 'Square', '🔴 Bearish'))
+            elif abs(diff - 120) < 1:
+                events.append((names[i], names[j], 'Trine', '🟢 Bullish'))
+            elif abs(diff - 180) < 1:
+                events.append((names[i], names[j], 'Opposition', '🔴 Bearish'))
+    return events
 
-# === Basic Mappings ===
-nakshatras = [
-    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra", "Punarvasu", "Pushya",
-    "Ashlesha", "Magha", "Purva Phalguni", "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha",
-    "Anuradha", "Jyeshtha", "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishta",
-    "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"
-]
+# === Timeline Generator ===
+def generate_astro_timeline(date, symbol, interval=15):
+    start_dt = INDIA_TZ.localize(datetime.combine(date, dt_time(0, 0)))
+    end_dt = start_dt + timedelta(days=1)
+    current = start_dt
 
-planet_names = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"]
-rulers = [
-    "Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"
-] * 3  # for 27 nakshatras
+    timeline = []
 
-zodiac_signs = [
-    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
-]
+    while current < end_dt:
+        utc_dt = current.astimezone(pytz.utc)
+        jd = swe.julday(utc_dt.year, utc_dt.month, utc_dt.day, utc_dt.hour + utc_dt.minute / 60)
 
-sign_lords = [
-    "Mars", "Venus", "Mercury", "Moon", "Sun", "Mercury",
-    "Venus", "Mars", "Jupiter", "Saturn", "Saturn", "Jupiter"
-]
+        moon_long, sign_lord, nak_index, sublord = get_moon_details(jd)
+        aspect_events = check_aspects(jd)
 
-# === Astro Functions ===
-def get_nakshatra_deg(moon_long):
-    nak_index = int(moon_long // (360 / 27))
-    nak_deg = (moon_long % (360 / 27)) * 60 / (360 / 27)
-    return nakshatras[nak_index], rulers[nak_index], round(nak_deg, 2)
+        # SIGNAL LOGIC BASED ON SYMBOL (can expand later)
+        signal = '🟡 Neutral'
+        if any(e[3] == '🔴 Bearish' for e in aspect_events):
+            signal = '🔴 Bearish'
+        elif any(e[3] == '🟢 Bullish' for e in aspect_events):
+            signal = '🟢 Bullish'
 
-def get_sub_lord(jd):
-    moon_pos, _ = swe.calc_ut(jd, swe.MOON)
-    moon_long = moon_pos[0]
-    sublord_index = int((moon_long % 13.3333) // (13.3333 / 9))
-    return planet_names[sublord_index % 9]
-
-def get_zodiac(moon_long):
-    sign_index = int(moon_long // 30)
-    return zodiac_signs[sign_index], sign_lords[sign_index]
-
-def check_aspect_signal(jd, moon_long):
-    aspects = []
-    signal = "⚪ No Aspect"
-    orb = 3.0
-    aspect_types = {
-        60: ("Sextile", "Bullish"),
-        120: ("Trine", "Bullish"),
-        90: ("Square", "Bearish"),
-        180: ("Opposition", "Bearish"),
-    }
-
-    found_bullish = False
-    found_bearish = False
-
-    for pid in [swe.SUN, swe.MERCURY, swe.VENUS, swe.MARS, swe.JUPITER, swe.SATURN]:
-        pl_pos, _ = swe.calc_ut(jd, pid)
-        diff = abs((moon_long - pl_pos[0]) % 360)
-
-        for deg, (label, sentiment) in aspect_types.items():
-            if abs(diff - deg) <= orb or abs((360 - diff) - deg) <= orb:
-                aspects.append(f"{planet_names[pid]} {label}")
-                if sentiment == "Bullish":
-                    found_bullish = True
-                elif sentiment == "Bearish":
-                    found_bearish = True
-
-    if found_bullish:
-        signal = "🟢 Bullish"
-    elif found_bearish:
-        signal = "🔴 Bearish"
-
-    return ", ".join(aspects), signal
-
-# === Timeline Calculation ===
-start_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=4))
-end_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=23, minutes=59))
-step = timedelta(minutes=5)
-
-data = []
-prev_signal = None
-
-curr_dt = start_dt
-while curr_dt <= end_dt:
-    jd = swe.julday(curr_dt.year, curr_dt.month, curr_dt.day,
-                    curr_dt.hour + curr_dt.minute / 60.0)
-    moon_pos, _ = swe.calc_ut(jd, swe.MOON)
-    moon_long = float(moon_pos[0])
-
-    try:
-        nak, star_lord, nak_deg = get_nakshatra_deg(moon_long)
-        zodiac, sign_lord = get_zodiac(moon_long)
-        sub_lord = get_sub_lord(jd)
-        aspects, signal = check_aspect_signal(jd, moon_long)
-        motion = "Direct"
-    except Exception as e:
-        curr_dt += step
-        continue
-
-    # Append only if signal changed
-    if signal != prev_signal and signal in ["🟢 Bullish", "🔴 Bearish"]:
-        data.append({
-            "Time": curr_dt.strftime("%H:%M"),
-            "Symbol": symbol,
-            "Zodiac": zodiac,
-            "Sign Lord": sign_lord,
-            "Nakshatra": nak,
-            "Star Lord": star_lord,
-            "Deg in Nak": nak_deg,
-            "Sub Lord": sub_lord,
-            "Motion": motion,
-            "Moon Aspects": aspects,
-            "Signal": signal
+        timeline.append({
+            'Symbol': symbol,
+            'Time': current.strftime('%I:%M %p'),
+            'Moon Long°': round(moon_long, 2),
+            'Sign Lord': sign_lord,
+            'Nakshatra': nak_index,
+            'Sub Lord': sublord,
+            'Aspects': ', '.join([f"{a[0]} {a[2]} {a[1]}" for a in aspect_events]),
+            'Signal': signal
         })
-        prev_signal = signal
 
-    curr_dt += step
+        current += timedelta(minutes=interval)
 
-# === Output ===
-df = pd.DataFrame(data)
-st.markdown(f"### 🔁 Signal Flip Timeline for {symbol} on {selected_date.strftime('%d-%b-%Y')}")
+    return pd.DataFrame(timeline)
+
+# === Streamlit UI ===
+st.set_page_config(page_title="🔮 Astro Signal Timeline", layout="wide")
+st.title("📊 Astro Timeline Signal Viewer")
+
+# Select Symbol and Date
+symbol_list = [
+    "NIFTY", "BANKNIFTY", "PHARMA", "AUTO", "FMCG", "IT", "METAL",
+    "PSUBANK", "PVT BANK", "OIL AND GAS", "GOLD", "BTC", "CRUDE", "SILVER",
+    "DOWJONES", "NASDAQ"
+]
+
+selected_symbol = st.selectbox("📈 Select Symbol", symbol_list)
+selected_date = st.date_input("📅 Select Date", value=datetime.now().date())
+
+# Generate Timeline
+with st.spinner("Calculating astro events..."):
+    df = generate_astro_timeline(selected_date, selected_symbol)
+    st.success("✅ Timeline Generated")
+
+# Show Timeline Table
 st.dataframe(df, use_container_width=True)
+
+# CSV Download
+csv = df.to_csv(index=False)
+st.download_button("📥 Download CSV", csv, f"{selected_symbol}_astro_{selected_date}.csv", "text/csv")
