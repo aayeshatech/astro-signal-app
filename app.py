@@ -1,122 +1,128 @@
 import streamlit as st
-import swisseph as swe
-from datetime import datetime, timedelta, time as dtime
-import pytz
+from datetime import datetime
 import pandas as pd
+import pytz
+import math
+from astropy.coordinates import get_body, GeocentricTrueEcliptic
+from astropy.time import Time
 
-# Set path to ephemeris
-swe.set_ephe_path("/usr/share/ephe")  # Adjust this path for your system
+# === Streamlit Page Config ===
+st.set_page_config(page_title="🌓 Astro Gann Grid", layout="wide", page_icon="📈")
+st.title("📈 Astro Gann Tool with Moon Nakshatra, D9 & Gann Square of 9")
 
-# Constants
-NODES = ["Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"]
-PLANET_NAMES = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
-NAKSHATRA_LIST = [
-    'Ashwini', 'Bharani', 'Krittika', 'Rohini', 'Mrigashira', 'Ardra', 'Punarvasu',
-    'Pushya', 'Ashlesha', 'Magha', 'Purva Phalguni', 'Uttara Phalguni', 'Hasta',
-    'Chitra', 'Swati', 'Vishakha', 'Anuradha', 'Jyeshtha', 'Mula', 'Purva Ashadha',
-    'Uttara Ashadha', 'Shravana', 'Dhanishta', 'Shatabhisha', 'Purva Bhadrapada',
-    'Uttara Bhadrapada', 'Revati'
+# === Sidebar Inputs ===
+with st.sidebar:
+    st.header("🛠️ Input Controls")
+
+    symbol = st.text_input("Symbol", value="NIFTY")
+    price_input = st.number_input("CMP (Current Market Price)", min_value=1.0, value=25000.0)
+    date_input = st.date_input("Date", value=datetime.today())
+    time_input = st.time_input("Time", value=datetime.now().time())
+    angle_step = st.selectbox("📐 Gann Angle Step", [30, 45, 60, 90], index=1)
+    steps = st.slider("Steps", 5, 50, 10)
+
+# === Astro Time Setup ===
+dt = datetime.combine(date_input, time_input)
+tz = pytz.timezone("Asia/Kolkata")
+dt = tz.localize(dt)
+astro_time = Time(dt)
+
+# === Astro Calculations ===
+moon = get_body('moon', astro_time)
+moon_coords = moon.transform_to(GeocentricTrueEcliptic(equinox=astro_time))
+moon_longitude = moon_coords.lon.deg
+moon_degree = round(moon_longitude, 2)
+
+# === Zodiac & Nakshatra ===
+zodiac_signs = [
+    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
 ]
-SIGN_LORDS = [
-    'Mars', 'Venus', 'Mercury', 'Moon', 'Sun', 'Mercury',
-    'Venus', 'Mars', 'Jupiter', 'Saturn', 'Saturn', 'Jupiter'
+zodiac_name = zodiac_signs[int(moon_longitude // 30)]
+
+nakshatras = [
+    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra", "Punarvasu", "Pushya", "Ashlesha",
+    "Magha", "Purva Phalguni", "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha", "Jyeshtha",
+    "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishta", "Shatabhisha", "Purva Bhadrapada",
+    "Uttara Bhadrapada", "Revati"
 ]
+nakshatra_name = nakshatras[int((moon_longitude * 3) // 40)]
 
-SECTOR_MAPPING = {
-    'Moon': ['FMCG', 'Pharma'],
-    'Venus': ['Auto', 'FMCG'],
-    'Jupiter': ['Banking', 'PSU Bank'],
-    'Mercury': ['IT', 'Midcap'],
-    'Mars': ['Metal', 'Energy'],
-    'Saturn': ['Infra', 'Metal'],
-    'Rahu': ['Oil & Gas', 'Volatile'],
-    'Ketu': ['Volatile'],
-    'Sun': ['Finance', 'Energy'],
-}
+# D9 sign (Navamsa) calculation
+d9_sign_index = int((moon_longitude % 40) // (40 / 12))
+d9_sign_name = zodiac_signs[d9_sign_index % 12]
 
-def get_moon_details(jd):
-    moon_pos = swe.calc_ut(jd, swe.MOON)[0]
-    moon_long = moon_pos[0]
+# === Sentiment Logic ===
+bullish_nakshatras = {"Ashwini", "Bharani", "Rohini", "Pushya", "Hasta", "Swati", "Anuradha", "Shravana", "Revati"}
+bearish_nakshatras = {"Ardra", "Magha", "Purva Phalguni", "Chitra", "Vishakha", "Jyeshtha", "Mula", "Shatabhisha"}
 
-    nak_index = int((moon_long % 360) // (360 / 27))
-    nakshatra = NAKSHATRA_LIST[nak_index]
+astro_score = 1 if nakshatra_name in bullish_nakshatras else -1 if nakshatra_name in bearish_nakshatras else 0
+sentiment = "🟢 Bullish" if astro_score > 0 else "🔴 Bearish" if astro_score < 0 else "⚪ Neutral"
 
-    sign_index = int(moon_long // 30)
-    sign_lord = SIGN_LORDS[sign_index]
+# === Display Astro Info ===
+col1, col2, col3 = st.columns(3)
+col1.metric("🌕 Moon Degree", f"{moon_degree}°", zodiac_name)
+col2.metric("🌌 Nakshatra", nakshatra_name, sentiment)
+col3.metric("🔯 D9 Sign", d9_sign_name)
 
-    sublord_index = int(((moon_long % (360 / 27)) / (360 / 27)) * 9) % 9
-    sublord = NODES[sublord_index]
+st.markdown("---")
 
-    return moon_long, nakshatra, sign_lord, sublord
+# === Gann Square of 9 Grid ===
+with st.expander("📊 Gann Square of 9 Levels (Based on Angle Steps)", expanded=True):
+    base_sqrt = math.sqrt(price_input)
 
-def get_signal(sign_lord, sublord):
-    bullish_set = {'Moon', 'Venus', 'Jupiter'}
-    bearish_set = {'Saturn', 'Mars', 'Rahu', 'Ketu'}
+    def get_price_from_angle(base_sqrt, angle_deg):
+        new_sqrt = base_sqrt + (angle_deg / 360)
+        return round(new_sqrt ** 2, 2)
 
-    if sign_lord in bullish_set or sublord in bullish_set:
-        return '🟢 Bullish'
-    elif sign_lord in bearish_set or sublord in bearish_set:
-        return '🔴 Bearish'
-    else:
-        return '🟡 Neutral'
+    def get_zodiac_from_deg(deg):
+        return zodiac_signs[int((deg % 360) // 30)]
 
-def generate_astro_timeline(selected_date):
-    ist = pytz.timezone('Asia/Kolkata')
-    timeline = []
-    start_dt = ist.localize(datetime.combine(selected_date, dtime(9, 15)))
-    end_dt = ist.localize(datetime.combine(selected_date, dtime(15, 30)))
+    angles = [(i * angle_step) % 360 for i in range(1, steps + 1)]
 
-    current_time = start_dt
-    while current_time <= end_dt:
-        utc_time = current_time.astimezone(pytz.utc)
-        jd = swe.julday(utc_time.year, utc_time.month, utc_time.day, utc_time.hour + utc_time.minute / 60.0)
+    buy_levels, sell_levels = [], []
 
-        try:
-            moon_long, nakshatra, sign_lord, sublord = get_moon_details(jd)
-            signal = get_signal(sign_lord, sublord)
+    for i, angle in enumerate(angles, 1):
+        buy_deg = angle % 360
+        buy_price = get_price_from_angle(base_sqrt, buy_deg)
+        buy_zodiac = get_zodiac_from_deg(buy_deg)
 
-            bullish = []
-            bearish = []
+        sell_deg = (360 - angle) % 360
+        sell_price = get_price_from_angle(base_sqrt, -angle)
+        sell_zodiac = get_zodiac_from_deg(sell_deg)
 
-            for planet in [sign_lord, sublord]:
-                sectors = SECTOR_MAPPING.get(planet, [])
-                if planet in {'Moon', 'Venus', 'Jupiter'}:
-                    bullish.extend(sectors)
-                elif planet in {'Saturn', 'Mars', 'Rahu', 'Ketu'}:
-                    bearish.extend(sectors)
+        buy_levels.append({
+            "Step": i,
+            "🟢 Buy Level": f"**{buy_price}**",
+            "Buy Deg": round(buy_deg, 2),
+            "Buy Zodiac": buy_zodiac
+        })
 
-            # Deduplicate and sort
-            bullish = sorted(set(bullish))
-            bearish = sorted(set(bearish))
+        sell_levels.append({
+            "🔴 Sell Level": f"**{sell_price}**",
+            "Sell Deg": round(sell_deg, 2),
+            "Sell Zodiac": sell_zodiac
+        })
 
-            timeline.append({
-                "Time": current_time.strftime("%I:%M %p"),
-                "Moon Long°": round(moon_long, 2),
-                "Nakshatra": nakshatra,
-                "Sign Lord": sign_lord,
-                "Sub Lord": sublord,
-                "Signal": signal,
-                "Bullish Sectors": ', '.join(bullish),
-                "Bearish Sectors": ', '.join(bearish)
-            })
-        except Exception as e:
-            st.error(f"Error at {current_time}: {e}")
+    gann_square_df = pd.DataFrame({
+        "Step": [x["Step"] for x in buy_levels],
+        "🟢 Buy Level": [x["🟢 Buy Level"] for x in buy_levels],
+        "Buy Deg": [x["Buy Deg"] for x in buy_levels],
+        "Buy Zodiac": [x["Buy Zodiac"] for x in buy_levels],
+        "🔴 Sell Level": [x["🔴 Sell Level"] for x in sell_levels],
+        "Sell Deg": [x["Sell Deg"] for x in sell_levels],
+        "Sell Zodiac": [x["Sell Zodiac"] for x in sell_levels]
+    })
 
-        current_time += timedelta(minutes=30)
+    st.dataframe(gann_square_df, use_container_width=True, hide_index=True)
 
-    return pd.DataFrame(timeline)
-
-# === Streamlit UI ===
-st.set_page_config(page_title="🌙 Astro Timeline", layout="wide")
-st.title("🪐 Moon Astro Timeline with Sector Sentiment")
-
-selected_date = st.date_input("📅 Select Date", datetime.now().date())
-
-if st.button("Generate Timeline"):
-    df = generate_astro_timeline(selected_date)
-
-    if not df.empty:
-        st.write("### 🔍 Astro Timeline Result with Bullish/Bearish Sectors")
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.warning("No data available for the selected date.")
+# === Notes Section ===
+with st.expander("📘 Notes"):
+    st.markdown("""
+    - **Moon Degree**: Geocentric ecliptic longitude at selected time.
+    - **Nakshatra**: One of 27 lunar mansions influencing sentiment.
+    - **D9 Sign**: Vedic Navamsa placement for fine-tuned analysis.
+    - **Gann Square of 9**: Price projections using square root vibration theory.
+    - **Sentiment**: Based on Moon's Nakshatra – Bullish, Bearish, or Neutral.
+    - Combine astro signals with Gann levels for confluence-based entries.
+    """)
