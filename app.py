@@ -1,80 +1,97 @@
 import streamlit as st
+from datetime import datetime, date, time, timedelta
+from skyfield.api import load, wgs84
 import pandas as pd
-from datetime import datetime, timedelta, time
+import pytz
 
-# === Page Config ===
-st.set_page_config(page_title="📈 Astro Market Report", layout="wide")
+st.set_page_config(page_title="🔭 Astro Timing Report", layout="wide")
+st.title("Astro Market Signal Generator")
 
-# === App Title ===
-st.title("🔮 Astro Market Timing & Sentiment Report")
-st.markdown("Select date, time range, and index. Click **Refresh Report** to update based on planetary changes.")
+# Inputs
+report_date = st.date_input("Select Date", date.today())
+start_time = st.time_input("Start Time", time(9,15))
+end_time = st.time_input("End Time", time(15,30))
+market_type = st.selectbox("Market Type", ["Indian Market", "Global Market"])
+symbol = st.text_input("Symbol/Index (e.g., NIFTY, BANKNIFTY)", value="NIFTY")
 
-# === Inputs ===
-col1, col2, col3 = st.columns(3)
-with col1:
-    selected_date = st.date_input("📅 Select Date", datetime.today())
-with col2:
-    start_time = st.time_input("⏰ Start Time", time(9, 15))
-with col3:
-    end_time = st.time_input("⏰ End Time", time(15, 30))
+planets_all = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]
+selected_planets = st.multiselect("Planets to include", planets_all, default=["Moon","Mars","Venus","Sun","Jupiter","Saturn"])
 
-index = st.selectbox("📊 Select Index", ["Nifty", "Bank Nifty", "Sensex", "Gold", "Crude", "BTC", "Dow Jones"])
-refresh = st.button("🔄 Refresh Report")
+if st.button("Generate Report"):
+    tz = pytz.timezone("Asia/Kolkata") if "Indian" in market_type else pytz.UTC
+    start_dt = tz.localize(datetime.combine(report_date, start_time))
+    end_dt = tz.localize(datetime.combine(report_date, end_time))
 
-# === Sample Transit Data (Replace with actual logic/data from Jagannatha Hora) ===
-def generate_transit_data(date, start, end):
-    raw_periods = [
-        ("00:51", "04:43", "Venus", "Pushya", "Moon-Venus influence", "🟢", "Steady upside, banking stocks strong", "Buy on dips"),
-        ("04:43", "05:53", "Sun", "Pushya", "Moon-Sun volatility", "🔴", "Risk of gap-down or sudden drop", "Avoid new longs"),
-        ("05:53", "07:50", "Moon", "Pushya", "Emotional stability", "🟢", "Recovery possible, good for intraday longs", "Short-term longs"),
-        ("07:50", "09:12", "Mars", "Pushya", "Aggressive moves", "🟠", "Volatile swings, no clear direction", "Wait for confirmation"),
-        ("09:12", "12:43", "Rahu", "Pushya", "Rahu manipulation", "🔴", "Sharp corrections, false breakouts likely", "Caution – Hedge"),
-        ("12:43", "15:51", "Jupiter", "Pushya", "Optimism, expansion", "🟢", "Rally in heavyweights (HDFC, ICICI, RIL)", "Best for longs"),
-        ("15:51", "17:52", "Ketu", "Ashlesha", "Mercury Retrograde starts", "🔴", "Panic selling, sudden drops", "Avoid trades"),
-        ("17:52", "23:59", "Ketu", "Ashlesha", "Declination weakens", "🟠", "Sideways close, low volumes", "Stay flat")
-    ]
+    ts = load.timescale()
+    eph = load('de421.bsp')
+    loc = wgs84.latlon(28.6139, 77.2090) if "Indian" in market_type else None
 
-    filtered = []
-    for entry in raw_periods:
-        period_start = datetime.combine(date, datetime.strptime(entry[0], "%H:%M").time())
-        period_end = datetime.combine(date, datetime.strptime(entry[1], "%H:%M").time())
-        user_start = datetime.combine(date, start)
-        user_end = datetime.combine(date, end)
-        if period_end >= user_start and period_start <= user_end:
-            filtered.append({
-                "Time": f"{entry[0]} – {entry[1]}",
-                "Moon’s Sub-Lord": entry[2],
-                "Nakshatra": entry[3],
-                "Planetary Aspect": entry[4],
-                "Sentiment": entry[5],
-                "Expected Market Move": entry[6],
-                "Trading Bias": entry[7],
-            })
-    return filtered
+    aspects = {"Conjunction": 0, "Sextile": 60, "Square": 90, "Trine": 120, "Opposition": 180}
+    orb = 2.0  # ±2°
+    interval = timedelta(minutes=10)
 
-# === Summary ===
-def generate_summary(data):
-    if not data:
-        return "No data in selected period."
-    best_long = ""
-    best_short = ""
-    for d in data:
-        if d["Sentiment"] == "🟢":
-            best_long = d["Time"] + " – " + d["Expected Market Move"]
-        elif d["Sentiment"] == "🔴":
-            best_short = d["Time"] + " – " + d["Expected Market Move"]
-    return best_long, best_short
+    times = []
+    t = start_dt
+    while t <= end_dt:
+        times.append(t)
+        t += interval
 
-# === Report Generation ===
-if refresh:
-    data = generate_transit_data(selected_date, start_time, end_time)
-    df = pd.DataFrame(data)
+    records = []
+    for t in times:
+        tt = ts.utc(t.year, t.month, t.day, t.hour, t.minute)
+        longitudes = {}
+        for p in selected_planets:
+            body = eph[p.lower()]
+            if loc:
+                ast = (eph['earth'] + loc).at(tt).observe(body).apparent()
+            else:
+                ast = eph['earth'].at(tt).observe(body).apparent()
+            lon = ast.ecliptic_latlon()[0].degrees % 360
+            longitudes[p] = lon
 
-    st.subheader(f"📌 Astro Report for {index} — {selected_date.strftime('%d-%b-%Y')}")
-    st.dataframe(df, use_container_width=True)
+        for p1 in selected_planets:
+            for p2 in selected_planets:
+                if p1 >= p2: continue
+                diff = abs(longitudes[p1] - longitudes[p2])
+                angle = min(diff, 360 - diff)
+                for asp, deg in aspects.items():
+                    if abs(angle - deg) <= orb:
+                        sentiment = "🟢 Bullish" if asp in ["Conjunction","Sextile","Trine"] else "🔴 Bearish"
+                        records.append({
+                            "Time": t.strftime("%H:%M"),
+                            "Aspect": f"{p1} {asp} {p2}",
+                            "Angle": round(angle,1),
+                            "Sentiment": sentiment
+                        })
 
-    # Summary
-    long_summary, short_summary = generate_summary(data)
-    st.markdown("### 📈 Summary")
-    st.markdown(f"**🔵 Best Long Period:** {long_summary if long_summary else 'Not Found'}")
-    st.markdown(f"**🔴 Best Short Period:** {short_summary if short_summary else 'Not Found'}")
+    df = pd.DataFrame(records)
+    if df.empty:
+        st.warning("No aspects found in the given time range.")
+    else:
+        st.success(f"Found {len(df)} Astro Events for {symbol} on {report_date} ({market_type})")
+        st.dataframe(df)
+
+        bull = df[df.Sentiment.str.contains("Bullish")]
+        bear = df[df.Sentiment.str.contains("Bearish")]
+
+        st.subheader("🟢 Bullish Aspect Times")
+        st.dataframe(bull[["Time","Aspect"]])
+
+        st.subheader("🔴 Bearish Aspect Times")
+        st.dataframe(bear[["Time","Aspect"]])
+
+        # Summary of best windows
+        if not bull.empty:
+            long_time = bull.Time.iloc[0] + " – " + bull.Time.iloc[-1]
+        else:
+            long_time = "None"
+        if not bear.empty:
+            short_time = bear.Time.iloc[0] + " – " + bear.Time.iloc[-1]
+        else:
+            short_time = "None"
+
+        st.markdown(f"**Best Long Period**: {long_time}")
+        st.markdown(f"**Best Short Period**: {short_time}")
+
+        # Download
+        st.download_button("📥 Download Report CSV", data=df.to_csv(index=False), file_name="astro_aspects.csv")
