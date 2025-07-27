@@ -1,36 +1,71 @@
-import streamlit as st
-from datetime import datetime
-import pandas as pd
+from astropy.coordinates import get_body, solar_system_ephemeris
+from astropy.coordinates import GeocentricTrueEcliptic
+from astropy.time import Time
+import astropy.units as u
+from datetime import datetime, timedelta
+import pytz
 
-# === Title and Inputs ===
-st.title("📈 Astro Transit Timeline")
-selected_stock = st.selectbox("Stock/Index", ["NIFTY", "BANKNIFTY", "GOLD", "CRUDE", "BTC"])
-selected_date = st.date_input("Select Date", datetime.now().date())
+def get_transits_for_day(date):
+    """Returns a list of important transits for a given date with signal meanings"""
+    
+    # Timezone setup
+    tz = pytz.timezone("Asia/Kolkata")
+    start_dt = tz.localize(datetime.combine(date, datetime.min.time()))
+    end_dt = start_dt + timedelta(days=1)
 
-# === Fetch Transit Data Dynamically ===
-def get_transits_for_date(date):
-    # Example dummy data based on date just for illustration
-    if date == datetime(2025, 7, 30).date():
-        return [
-            ("10:15 AM", "Moon conjunct Saturn", "🔴 Bearish"),
-            ("11:30 AM", "Venus trine Jupiter", "🟢 Bullish"),
-            ("01:05 PM", "Mars sextile Mercury", "🟡 Volatile"),
-            ("02:40 PM", "Sun opposite Neptune", "🔴 Bearish"),
-            ("04:20 PM", "Moon trine Venus", "🟢 Bullish"),
-        ]
-    elif date == datetime(2025, 7, 31).date():
-        return [
-            ("09:30 AM", "Moon square Mars", "🔴 Bearish"),
-            ("12:00 PM", "Mercury conjunct Sun", "🟢 Bullish"),
-            ("03:15 PM", "Moon sextile Jupiter", "🟢 Bullish"),
-        ]
-    else:
-        return [("No transits", "No transits for selected date", "⚪ Neutral")]
+    step_minutes = 10  # checks every 10 minutes
+    transits = []
+    checked_times = []
 
-# === Generate DataFrame ===
-transit_data = get_transits_for_date(selected_date)
-df = pd.DataFrame(transit_data, columns=["Time", "Transit", "Signal"])
+    # Planet pairs to check for transits
+    planets = ['moon', 'sun', 'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'neptune']
+    aspects = {
+        0: "Conjunction",      # 0°
+        60: "Sextile",         # 60°
+        90: "Square",          # 90°
+        120: "Trine",          # 120°
+        180: "Opposition"      # 180°
+    }
 
-# === Display Output ===
-st.subheader(f"Astro Transit Timeline for {selected_stock} on {selected_date.strftime('%d-%b-%Y')}")
-st.table(df)
+    signal_map = {
+        "Moon conjunct Saturn": "🔴 Bearish",
+        "Venus trine Jupiter": "🟢 Bullish",
+        "Mars sextile Mercury": "🟡 Volatile",
+        "Sun opposite Neptune": "🔴 Bearish",
+        "Moon trine Venus": "🟢 Bullish",
+    }
+
+    with solar_system_ephemeris.set('de432s'):
+        current_time = start_dt
+        while current_time < end_dt:
+            t = Time(current_time)
+            positions = {}
+            for planet in planets:
+                pos = get_body(planet, t)
+                ecliptic = pos.transform_to(GeocentricTrueEcliptic())
+                lon = ecliptic.lon.to(u.deg).value % 360
+                positions[planet] = lon
+
+            # Check all pairs for aspect
+            for p1 in planets:
+                for p2 in planets:
+                    if p1 == p2: continue
+                    angle = abs(positions[p1] - positions[p2])
+                    angle = angle if angle <= 180 else 360 - angle
+                    for asp_deg, asp_name in aspects.items():
+                        if abs(angle - asp_deg) < 1.0:  # Orb of ±1°
+                            label = f"{p1.capitalize()} {asp_name.lower()} {p2.capitalize()}"
+                            label_sorted = " ".join(sorted(label.split()))
+                            readable_time = current_time.strftime("%I:%M %p")
+                            signal = signal_map.get(label, None)
+                            if signal and readable_time not in checked_times:
+                                transits.append({
+                                    "time": readable_time,
+                                    "transit": label,
+                                    "signal": signal
+                                })
+                                checked_times.append(readable_time)
+
+            current_time += timedelta(minutes=step_minutes)
+
+    return transits
