@@ -4,3 +4,4 @@ pandas
 astropy
 requests
 bs4
+pyswisseph
