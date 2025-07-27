@@ -5,15 +5,24 @@ from datetime import datetime, timedelta, time as dt_time
 import pytz
 
 # Set ephemeris path
-swe.set_ephe_path('/usr/share/ephe')
+swe.set_ephe_path('/usr/share/ephe')  # Make sure ephemeris files are present
 INDIA_TZ = pytz.timezone("Asia/Kolkata")
 
-# === Get Moon Details ===
+# === Get Moon Details Safely ===
 def get_moon_details(jd):
-    moon_long = swe.calc_ut(jd, swe.MOON)[0]
+    moon_result = swe.calc_ut(jd, swe.MOON)
+
+    # Validate result
+    if not isinstance(moon_result, (list, tuple)) or not isinstance(moon_result[0], (int, float)):
+        raise ValueError("Invalid result from swe.calc_ut for Moon longitude.")
+
+    moon_long = moon_result[0]
+
+    # Calculate sign lord (zodiac), nakshatra index and sublord
     sign_lord = int(moon_long // 30)
     nak_index = int((moon_long % 30) // (13 + 1/3))
     sublord = int(((moon_long % (13 + 1/3)) / ((13 + 1/3) / 9)))
+
     return moon_long, sign_lord, nak_index, sublord
 
 # === Check Planetary Aspects ===
@@ -51,7 +60,11 @@ def generate_astro_timeline(date, symbol, interval=15):
         utc_dt = current.astimezone(pytz.utc)
         jd = swe.julday(utc_dt.year, utc_dt.month, utc_dt.day, utc_dt.hour + utc_dt.minute / 60)
 
-        moon_long, sign_lord, nak_index, sublord = get_moon_details(jd)
+        try:
+            moon_long, sign_lord, nak_index, sublord = get_moon_details(jd)
+        except Exception as e:
+            moon_long, sign_lord, nak_index, sublord = 0.0, -1, -1, -1
+
         aspect_events = check_aspects(jd)
 
         signal = '🟡 Neutral'
@@ -79,7 +92,7 @@ def generate_astro_timeline(date, symbol, interval=15):
 st.set_page_config(page_title="🔮 Astro Signal Timeline", layout="wide")
 st.title("📊 Astro Timeline Signal Viewer")
 
-# UI Controls
+# UI Inputs
 symbol_list = [
     "NIFTY", "BANKNIFTY", "PHARMA", "AUTO", "FMCG", "IT", "METAL",
     "PSUBANK", "PVT BANK", "OIL AND GAS", "GOLD", "BTC", "CRUDE", "SILVER",
@@ -88,12 +101,15 @@ symbol_list = [
 selected_symbol = st.selectbox("📈 Select Symbol", symbol_list)
 selected_date = st.date_input("📅 Select Date", value=datetime.now().date())
 
-# Generate
-with st.spinner("Calculating astro events..."):
-    df = generate_astro_timeline(selected_date, selected_symbol)
-    st.success("✅ Timeline Generated")
+# Generate Timeline with error handling
+with st.spinner("🔄 Calculating astro events..."):
+    try:
+        df = generate_astro_timeline(selected_date, selected_symbol)
+        st.success("✅ Timeline Generated")
+        st.dataframe(df, use_container_width=True)
 
-# Display & Download
-st.dataframe(df, use_container_width=True)
-csv = df.to_csv(index=False)
-st.download_button("📥 Download CSV", csv, f"{selected_symbol}_astro_{selected_date}.csv", "text/csv")
+        csv = df.to_csv(index=False)
+        st.download_button("📥 Download CSV", csv, f"{selected_symbol}_astro_{selected_date}.csv", "text/csv")
+
+    except Exception as e:
+        st.error(f"❌ Error generating timeline: {e}")
