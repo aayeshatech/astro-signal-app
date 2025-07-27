@@ -1,43 +1,70 @@
 import streamlit as st
-from datetime import datetime, time
 import pandas as pd
+from datetime import datetime, time
 
-# Mock Astro Events Data
-astro_events = [
-    {"datetime": "2025-07-25 08:30", "event": "Sun-Moon Square", "sentiment": "Bearish", "symbol": "Nifty"},
-    {"datetime": "2025-07-25 09:45", "event": "Mercury Trine Jupiter", "sentiment": "Bullish", "symbol": "Bank Nifty"},
-    {"datetime": "2025-07-25 11:00", "event": "Moon Sextile Venus", "sentiment": "Bullish", "symbol": "Gold"},
-    {"datetime": "2025-07-25 14:43", "event": "Venus Retrograde", "sentiment": "Bullish", "symbol": "Nifty"},
-    {"datetime": "2025-07-25 17:25", "event": "Moon Conjunct Sun", "sentiment": "Bearish", "symbol": "Bank Nifty"}
+# === Page Config ===
+st.set_page_config(page_title="📊 Astro Market Report", layout="centered")
+
+st.title("📊 Sector-Wise Astro Outlook Dashboard")
+st.caption("🪐 Astro Sentiment Timeline – Market Trend Analysis")
+
+# === Sample Astro Report (Mimicking DeepSeek AI Output) ===
+sample_data = [
+    {"Time": "00:51 – 04:43", "Moon’s Sub-Lord": "Venus (Ve)", "Nakshatra": "Pushya (Sa)",
+     "Planetary Aspect": "Moon-Venus influence", "Sentiment": "🟢 Bullish",
+     "Expected Market Move": "Steady upside, banking stocks strong", "Trading Bias": "Buy on dips"},
+    {"Time": "04:43 – 05:53", "Moon’s Sub-Lord": "Sun (Su)", "Nakshatra": "Pushya (Sa)",
+     "Planetary Aspect": "Moon-Sun volatility", "Sentiment": "🔴 Bearish",
+     "Expected Market Move": "Risk of gap-down or sudden drop", "Trading Bias": "Avoid new longs"},
+    {"Time": "05:53 – 07:50", "Moon’s Sub-Lord": "Moon (Mo)", "Nakshatra": "Pushya (Sa)",
+     "Planetary Aspect": "Emotional stability", "Sentiment": "🟢 Bullish",
+     "Expected Market Move": "Recovery possible, good for intraday longs", "Trading Bias": "Short-term longs"},
+    {"Time": "07:50 – 09:12", "Moon’s Sub-Lord": "Mars (Ma)", "Nakshatra": "Pushya (Sa)",
+     "Planetary Aspect": "Aggressive moves", "Sentiment": "🟠 Neutral",
+     "Expected Market Move": "Volatile swings, no clear direction", "Trading Bias": "Wait for confirmation"},
+    {"Time": "09:12 – 12:43", "Moon’s Sub-Lord": "Rahu (Ra)", "Nakshatra": "Pushya (Sa)",
+     "Planetary Aspect": "Rahu manipulation", "Sentiment": "🔴 Bearish",
+     "Expected Market Move": "Sharp corrections, false breakouts likely", "Trading Bias": "Caution – Hedge"},
+    {"Time": "12:43 – 15:51", "Moon’s Sub-Lord": "Jupiter (Ju)", "Nakshatra": "Pushya (Sa)",
+     "Planetary Aspect": "Optimism, expansion", "Sentiment": "🟢 Bullish",
+     "Expected Market Move": "Rally in heavyweights (HDFC, ICICI, RIL)", "Trading Bias": "Best for longs"},
+    {"Time": "15:51 – 17:52", "Moon’s Sub-Lord": "Ketu (Ke)", "Nakshatra": "Ashlesha (Me)",
+     "Planetary Aspect": "Mercury Retrograde starts", "Sentiment": "🔴 Bearish",
+     "Expected Market Move": "Panic selling, sudden drops", "Trading Bias": "Avoid trades"},
+    {"Time": "17:52 – EOD", "Moon’s Sub-Lord": "Ketu (Ke)", "Nakshatra": "Ashlesha (Me)",
+     "Planetary Aspect": "Declination weakens", "Sentiment": "🟠 Choppy",
+     "Expected Market Move": "Sideways close, low volumes", "Trading Bias": "Stay flat"},
 ]
 
-# Convert to DataFrame
-df = pd.DataFrame(astro_events)
-df['datetime'] = pd.to_datetime(df['datetime'])
+df = pd.DataFrame(sample_data)
 
-# UI
-st.title("🔭 Astro Aspect Report Search")
+# === Inputs ===
+col1, col2 = st.columns(2)
+with col1:
+    selected_date = st.date_input("Select Report Date", datetime(2025, 7, 25))
+with col2:
+    start_time = st.time_input("From Time", time(0, 0))
+    end_time = st.time_input("To Time", time(23, 59))
 
-# Date and time input
-date = st.date_input("📅 Select Report Date", datetime(2025, 7, 25).date())
-start_time = st.time_input("⏱️ Start Time", time(9, 15))
-end_time = st.time_input("⏱️ End Time", time(15, 30))
-symbol = st.text_input("📈 Optional: Enter Stock/Index (e.g., Nifty, Bank Nifty, Gold)", "")
+# === Filter Data Based on Time Range ===
+def extract_start_minutes(time_str):
+    """Extract start minute from time range string like '00:51 – 04:43'."""
+    try:
+        start_str = time_str.split("–")[0].strip()
+        dt = datetime.strptime(start_str, "%H:%M")
+        return dt.hour * 60 + dt.minute
+    except:
+        return -1  # for 'EOD'
 
-# Filter logic
-start_dt = datetime.combine(date, start_time)
-end_dt = datetime.combine(date, end_time)
+start_minutes = start_time.hour * 60 + start_time.minute
+end_minutes = end_time.hour * 60 + end_time.minute
 
-mask = (df['datetime'] >= start_dt) & (df['datetime'] <= end_dt)
-if symbol:
-    mask &= df['symbol'].str.lower() == symbol.lower()
+df["Start_Minutes"] = df["Time"].apply(extract_start_minutes)
+filtered_df = df[(df["Start_Minutes"] >= start_minutes) & (df["Start_Minutes"] <= end_minutes)].drop(columns=["Start_Minutes"])
 
-filtered_df = df.loc[mask]
+# === Show Table ===
+st.markdown(f"### 🗓️ Astro Report for {selected_date.strftime('%A, %d %B %Y')}")
+st.dataframe(filtered_df, use_container_width=True)
 
-# Result
-st.subheader(f"🪐 Astro Aspect Events between {start_time} - {end_time} IST")
-if not filtered_df.empty:
-    for _, row in filtered_df.iterrows():
-        st.markdown(f"**{row['datetime'].strftime('%H:%M')}** | `{row['symbol']}` | *{row['event']}* → **{row['sentiment']}**")
-else:
-    st.info("No astro aspect events found in this time range.")
+# === Note ===
+st.info("This dashboard simulates astro timing reports fetched from DeepSeek-style AI insight. Custom real-time integration available.")
