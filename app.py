@@ -4,19 +4,19 @@ import pandas as pd
 from datetime import datetime, timedelta, time as dt_time
 import pytz
 
-# Ephemeris config
-swe.set_ephe_path('/usr/share/ephe')  # Set path to ephemeris files
+# Set ephemeris path
+swe.set_ephe_path('/usr/share/ephe')
 INDIA_TZ = pytz.timezone("Asia/Kolkata")
 
-# === Function to get Moon Nakshatra & Lords ===
+# === Get Moon Details ===
 def get_moon_details(jd):
     moon_long = swe.calc_ut(jd, swe.MOON)[0]
     sign_lord = int(moon_long // 30)
     nak_index = int((moon_long % 30) // (13 + 1/3))
-    sublord = int((moon_long % (13 + 1/3)) // ((13 + 1/3) / 9))
+    sublord = int(((moon_long % (13 + 1/3)) / ((13 + 1/3) / 9)))
     return moon_long, sign_lord, nak_index, sublord
 
-# === Planetary Aspect Logic ===
+# === Check Planetary Aspects ===
 def check_aspects(jd):
     events = []
     planets = [swe.SUN, swe.MOON, swe.MERCURY, swe.VENUS, swe.MARS, swe.JUPITER, swe.SATURN]
@@ -40,14 +40,13 @@ def check_aspects(jd):
                 events.append((names[i], names[j], 'Opposition', '🔴 Bearish'))
     return events
 
-# === Timeline Generator ===
+# === Astro Timeline Generator ===
 def generate_astro_timeline(date, symbol, interval=15):
     start_dt = INDIA_TZ.localize(datetime.combine(date, dt_time(0, 0)))
     end_dt = start_dt + timedelta(days=1)
     current = start_dt
 
     timeline = []
-
     while current < end_dt:
         utc_dt = current.astimezone(pytz.utc)
         jd = swe.julday(utc_dt.year, utc_dt.month, utc_dt.day, utc_dt.hour + utc_dt.minute / 60)
@@ -55,7 +54,6 @@ def generate_astro_timeline(date, symbol, interval=15):
         moon_long, sign_lord, nak_index, sublord = get_moon_details(jd)
         aspect_events = check_aspects(jd)
 
-        # SIGNAL LOGIC BASED ON SYMBOL (can expand later)
         signal = '🟡 Neutral'
         if any(e[3] == '🔴 Bearish' for e in aspect_events):
             signal = '🔴 Bearish'
@@ -81,24 +79,21 @@ def generate_astro_timeline(date, symbol, interval=15):
 st.set_page_config(page_title="🔮 Astro Signal Timeline", layout="wide")
 st.title("📊 Astro Timeline Signal Viewer")
 
-# Select Symbol and Date
+# UI Controls
 symbol_list = [
     "NIFTY", "BANKNIFTY", "PHARMA", "AUTO", "FMCG", "IT", "METAL",
     "PSUBANK", "PVT BANK", "OIL AND GAS", "GOLD", "BTC", "CRUDE", "SILVER",
     "DOWJONES", "NASDAQ"
 ]
-
 selected_symbol = st.selectbox("📈 Select Symbol", symbol_list)
 selected_date = st.date_input("📅 Select Date", value=datetime.now().date())
 
-# Generate Timeline
+# Generate
 with st.spinner("Calculating astro events..."):
     df = generate_astro_timeline(selected_date, selected_symbol)
     st.success("✅ Timeline Generated")
 
-# Show Timeline Table
+# Display & Download
 st.dataframe(df, use_container_width=True)
-
-# CSV Download
 csv = df.to_csv(index=False)
 st.download_button("📥 Download CSV", csv, f"{selected_symbol}_astro_{selected_date}.csv", "text/csv")
