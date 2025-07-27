@@ -1,69 +1,96 @@
 import streamlit as st
 import requests
-import json
-from datetime import date, datetime
+from datetime import datetime, timedelta
+import pandas as pd
 
-# === Streamlit Page Config ===
-st.set_page_config(page_title="🔭 Astro Transits Viewer", layout="wide")
+st.set_page_config(page_title="🔭 Astro Transits Signal", layout="wide")
 
-st.title("🔭 Vedic Astro Transits Viewer (Almanac API)")
-st.markdown("View planetary transits time-wise from [Astronomics Almanac](https://data.astronomics.ai/almanac/).")
+# === Inputs ===
+st.title("📊 Astro Market Transits Report")
+col1, col2, col3 = st.columns(3)
 
-# === Input Section ===
-selected_date = st.date_input("📅 Select Date", date.today())
+with col1:
+    selected_date = st.date_input("Select Date", datetime.now().date())
 
-# === Fetch Astro Data ===
-def fetch_astro_data(date_str):
-    url = f"https://data.astronomics.ai/almanac?date={date_str}"
+with col2:
+    start_time = st.time_input("From Time", datetime.strptime("09:15", "%H:%M").time())
+
+with col3:
+    end_time = st.time_input("To Time", datetime.strptime("15:30", "%H:%M").time())
+
+stock_index = st.selectbox("Select Index", ["Nifty", "Bank Nifty", "Gold", "Crude", "BTC", "Dow"])
+
+refresh_data = st.button("🔁 Refresh Astro Data")
+
+# === Convert to ISO format ===
+start_dt = datetime.combine(selected_date, start_time)
+end_dt = datetime.combine(selected_date, end_time)
+
+# === Load Transits from API ===
+@st.cache_data(ttl=3600, show_spinner="Fetching astro transits...")
+def load_transits(date_str):
+    url = f"https://data.astronomics.ai/almanac/?date={date_str}"
     try:
-        response = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        return data
+    except Exception as e:
+        st.error(f"❌ Error fetching data: {e}")
+        return None
 
-        if response.status_code != 200:
-            return None, f"❌ HTTP {response.status_code}: Failed to fetch astro data."
+# === On Button Click: Refresh ===
+if refresh_data:
+    with st.spinner("⏳ Generating Astro Report..."):
+        transits_data = load_transits(selected_date.strftime("%Y-%m-%d"))
 
-        try:
-            data = response.json()
-        except json.JSONDecodeError:
-            return None, "❌ Invalid JSON received from astro API."
+        if not transits_data:
+            st.error("❌ Could not load astro data.")
+        else:
+            df_transits = pd.DataFrame(transits_data.get("transits", []))
 
-        if not data or "transits" not in data:
-            return None, "⚠️ No transit data found in API response."
+            if df_transits.empty:
+                st.warning("⚠️ No transits found.")
+            else:
+                df_transits["start_time"] = pd.to_datetime(df_transits["start_time"])
+                df_transits["end_time"] = pd.to_datetime(df_transits["end_time"])
+                df_transits["mid_time"] = df_transits["start_time"] + (df_transits["end_time"] - df_transits["start_time"]) / 2
 
-        return data, None
+                # Filter by selected time range
+                df_filtered = df_transits[
+                    (df_transits["start_time"] >= start_dt) &
+                    (df_transits["end_time"] <= end_dt)
+                ].copy()
 
-    except requests.exceptions.RequestException as e:
-        return None, f"❌ Network error: {e}"
+                if df_filtered.empty:
+                    st.warning("⚠️ No transits found in selected time range.")
+                else:
+                    st.subheader(f"🔭 Transits for {selected_date.strftime('%Y-%m-%d')} ({stock_index})")
 
-# === Display Results ===
-st.subheader(f"📈 Planetary Transits for {selected_date.isoformat()}")
-data, error = fetch_astro_data(selected_date.isoformat())
+                    df_filtered["Time Window"] = df_filtered["start_time"].dt.strftime("%H:%M") + " – " + df_filtered["end_time"].dt.strftime("%H:%M")
+                    df_filtered = df_filtered[["Time Window", "planet", "nakshatra", "interpretation", "signal", "summary"]]
+                    df_filtered.columns = ["🕒 Time", "🌍 Planet", "✨ Nakshatra", "📖 Interpretation", "📈 Bias", "🧠 Summary"]
 
-if error:
-    st.error(error)
-elif data:
-    transits = data["transits"]
-    if not transits:
-        st.warning("No transits found for this date.")
-    else:
-        # Sort by time
-        sorted_transits = sorted(transits, key=lambda x: x.get("timestamp", ""))
-        for t in sorted_transits:
-            planet = t.get("planet", "Unknown")
-            event = t.get("event", "Transit")
-            nakshatra = t.get("nakshatra", {}).get("name", "")
-            sign = t.get("sign", {}).get("name", "")
-            time_str = t.get("timestamp", "N/A")
+                    st.dataframe(df_filtered, use_container_width=True)
 
-            # Format time nicely
-            try:
-                t_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                local_time = t_dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-            except:
-                local_time = time_str
+                    # === Summary ===
+                    bullish = df_filtered[df_filtered["📈 Bias"] == "🟢 Bullish"]
+                    bearish = df_filtered[df_filtered["📈 Bias"] == "🔴 Bearish"]
 
-            st.markdown(f"🔹 **{planet}** – `{event}`")
-            st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;🕒 `{local_time}` &nbsp;&nbsp;🔯 Nakshatra: `{nakshatra}` &nbsp;&nbsp;♒ Sign: `{sign}`")
-            st.markdown("---")
-else:
-    st.info("Select a date to view planetary transits.")
+                    best_long = bullish.sort_values(by="🕒 Time").head(1)
+                    best_short = bearish.sort_values(by="🕒 Time").head(1)
 
+                    st.markdown("---")
+                    st.subheader("🌟 Summary: Astro Trade Window")
+
+                    colA, colB = st.columns(2)
+                    with colA:
+                        if not best_long.empty:
+                            st.success(f"**🔼 Best Long:** {best_long.iloc[0]['🕒 Time']} – {best_long.iloc[0]['🧠 Summary']}")
+                        else:
+                            st.info("No strong long signals")
+
+                    with colB:
+                        if not best_short.empty:
+                            st.error(f"**🔽 Best Short:** {best_short.iloc[0]['🕒 Time']} – {best_short.iloc[0]['🧠 Summary']}")
+                        else:
+                            st.info("No strong short signals")
