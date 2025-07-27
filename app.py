@@ -5,21 +5,11 @@ import pytz
 import pandas as pd
 
 # Set path to ephemeris
-swe.set_ephe_path("/usr/share/ephe")  # adjust if you're using local ephemeris files
+swe.set_ephe_path("/usr/share/ephe")  # Adjust this path for your system
 
 # Constants
 NODES = ["Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"]
 PLANET_NAMES = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
-PLANET_COLORS = {
-    'Sun': '#FFD700',
-    'Moon': '#C0C0C0',
-    'Mars': '#FF4500',
-    'Mercury': '#7FFFD4',
-    'Jupiter': '#FFA500',
-    'Venus': '#FF69B4',
-    'Saturn': '#8A2BE2',
-}
-
 NAKSHATRA_LIST = [
     'Ashwini', 'Bharani', 'Krittika', 'Rohini', 'Mrigashira', 'Ardra', 'Punarvasu',
     'Pushya', 'Ashlesha', 'Magha', 'Purva Phalguni', 'Uttara Phalguni', 'Hasta',
@@ -27,19 +17,30 @@ NAKSHATRA_LIST = [
     'Uttara Ashadha', 'Shravana', 'Dhanishta', 'Shatabhisha', 'Purva Bhadrapada',
     'Uttara Bhadrapada', 'Revati'
 ]
-
 SIGN_LORDS = [
     'Mars', 'Venus', 'Mercury', 'Moon', 'Sun', 'Mercury',
     'Venus', 'Mars', 'Jupiter', 'Saturn', 'Saturn', 'Jupiter'
 ]
 
+SECTOR_MAPPING = {
+    'Moon': ['FMCG', 'Pharma'],
+    'Venus': ['Auto', 'FMCG'],
+    'Jupiter': ['Banking', 'PSU Bank'],
+    'Mercury': ['IT', 'Midcap'],
+    'Mars': ['Metal', 'Energy'],
+    'Saturn': ['Infra', 'Metal'],
+    'Rahu': ['Oil & Gas', 'Volatile'],
+    'Ketu': ['Volatile'],
+    'Sun': ['Finance', 'Energy'],
+}
+
 def get_moon_details(jd):
     moon_pos = swe.calc_ut(jd, swe.MOON)[0]
     moon_long = moon_pos[0]
-    
+
     nak_index = int((moon_long % 360) // (360 / 27))
     nakshatra = NAKSHATRA_LIST[nak_index]
-    
+
     sign_index = int(moon_long // 30)
     sign_lord = SIGN_LORDS[sign_index]
 
@@ -51,7 +52,7 @@ def get_moon_details(jd):
 def get_signal(sign_lord, sublord):
     bullish_set = {'Moon', 'Venus', 'Jupiter'}
     bearish_set = {'Saturn', 'Mars', 'Rahu', 'Ketu'}
-    
+
     if sign_lord in bullish_set or sublord in bullish_set:
         return '🟢 Bullish'
     elif sign_lord in bearish_set or sublord in bearish_set:
@@ -64,7 +65,7 @@ def generate_astro_timeline(selected_date):
     timeline = []
     start_dt = ist.localize(datetime.combine(selected_date, dtime(9, 15)))
     end_dt = ist.localize(datetime.combine(selected_date, dtime(15, 30)))
-    
+
     current_time = start_dt
     while current_time <= end_dt:
         utc_time = current_time.astimezone(pytz.utc)
@@ -74,24 +75,40 @@ def generate_astro_timeline(selected_date):
             moon_long, nakshatra, sign_lord, sublord = get_moon_details(jd)
             signal = get_signal(sign_lord, sublord)
 
+            bullish = []
+            bearish = []
+
+            for planet in [sign_lord, sublord]:
+                sectors = SECTOR_MAPPING.get(planet, [])
+                if planet in {'Moon', 'Venus', 'Jupiter'}:
+                    bullish.extend(sectors)
+                elif planet in {'Saturn', 'Mars', 'Rahu', 'Ketu'}:
+                    bearish.extend(sectors)
+
+            # Deduplicate and sort
+            bullish = sorted(set(bullish))
+            bearish = sorted(set(bearish))
+
             timeline.append({
                 "Time": current_time.strftime("%I:%M %p"),
                 "Moon Long°": round(moon_long, 2),
                 "Nakshatra": nakshatra,
                 "Sign Lord": sign_lord,
                 "Sub Lord": sublord,
-                "Signal": signal
+                "Signal": signal,
+                "Bullish Sectors": ', '.join(bullish),
+                "Bearish Sectors": ', '.join(bearish)
             })
         except Exception as e:
-            st.error(f"Error generating data for {current_time}: {e}")
+            st.error(f"Error at {current_time}: {e}")
 
         current_time += timedelta(minutes=30)
 
     return pd.DataFrame(timeline)
 
-# ==== Streamlit UI ====
+# === Streamlit UI ===
 st.set_page_config(page_title="🌙 Astro Timeline", layout="wide")
-st.title("🪐 Moon Astro Timeline: Bullish vs Bearish")
+st.title("🪐 Moon Astro Timeline with Sector Sentiment")
 
 selected_date = st.date_input("📅 Select Date", datetime.now().date())
 
@@ -99,7 +116,7 @@ if st.button("Generate Timeline"):
     df = generate_astro_timeline(selected_date)
 
     if not df.empty:
-        st.write("### 🔍 Astro Timeline Result")
+        st.write("### 🔍 Astro Timeline Result with Bullish/Bearish Sectors")
         st.dataframe(df, use_container_width=True)
     else:
-        st.warning("No data generated for this date.")
+        st.warning("No data available for the selected date.")
