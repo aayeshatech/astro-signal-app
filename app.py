@@ -1,45 +1,29 @@
 import streamlit as st
-from datetime import datetime, time
+from datetime import datetime
 import pandas as pd
 
-# === Streamlit App Config ===
-st.set_page_config(page_title="📈 Astro Transit Signal Viewer", layout="wide")
+# === Streamlit App Layout ===
+st.set_page_config(page_title="📈 Astro Signal Timeline", layout="centered")
 
-st.title("📈 Astro Signal Timeline Viewer")
+# === User Input: Date & Stock Name ===
+selected_date = st.date_input("📅 Select Astro Date", value=datetime.now().date())
+stock_name = st.text_input("📈 Stock/Index Name", value="NIFTY")
 
-# === Date and Time Inputs ===
-now_ist = datetime.now()
+# === Dummy Astro Transit Data Function ===
+def get_astro_transits(date, symbol):
+    # Replace this with actual astro logic or API integration
+    return pd.DataFrame([
+        {"Time": "10:15 AM", "Transit": "Moon conjunct Saturn", "Signal": "🔴 Bearish"},
+        {"Time": "11:30 AM", "Transit": "Venus trine Jupiter", "Signal": "🟢 Bullish"},
+        {"Time": "01:05 PM", "Transit": "Mars sextile Mercury", "Signal": "🟡 Volatile"},
+        {"Time": "02:40 PM", "Transit": "Sun opposite Neptune", "Signal": "🔴 Bearish"},
+        {"Time": "04:20 PM", "Transit": "Moon trine Venus", "Signal": "🟢 Bullish"},
+    ])
 
-start_date = st.date_input("📅 Select Start Date (IST)", value=now_ist.date())
-start_time = st.time_input("🕒 Select Start Time (IST)", value=now_ist.time())
-start_dt = datetime.combine(start_date, start_time)
-
-# === Stock or Index Input ===
-asset_name = st.text_input("📌 Enter Stock or Index Name (e.g. NIFTY, BANKNIFTY, GOLD)", value="NIFTY")
-
-# === Sample Astro Transit Data (Replace this with real logic later) ===
-astro_events = [
-    {"time": "10:15", "event": "Moon conjunct Saturn", "impact": "🔴 Bearish"},
-    {"time": "11:30", "event": "Venus trine Jupiter", "impact": "🟢 Bullish"},
-    {"time": "13:05", "event": "Mars sextile Mercury", "impact": "🟡 Volatile"},
-    {"time": "14:40", "event": "Sun opposite Neptune", "impact": "🔴 Bearish"},
-    {"time": "16:20", "event": "Moon trine Venus", "impact": "🟢 Bullish"},
-]
-
-# === Convert times and filter ===
-event_rows = []
-for astro in astro_events:
-    astro_time = datetime.combine(start_date, datetime.strptime(astro["time"], "%H:%M").time())
-    if astro_time >= start_dt:
-        event_rows.append({
-            "Time": astro_time.strftime("%I:%M %p"),
-            "Transit": astro["event"],
-            "Signal": astro["impact"]
-        })
-
-# === Display Output ===
-if event_rows:
-    st.markdown(f"### 📊 Astro Transit Timeline for **{asset_name.upper()}** on {start_date.strftime('%d-%b-%Y')}")
-    st.table(pd.DataFrame(event_rows))
+# === Fetch and Show Astro Table ===
+if selected_date and stock_name:
+    astro_df = get_astro_transits(selected_date, stock_name)
+    st.markdown(f"### 📊 Astro Transit Timeline for **{stock_name.upper()}** on `{selected_date.strftime('%d-%b-%Y')}`")
+    st.table(astro_df)
 else:
-    st.warning("No upcoming astro transits after selected time.")
+    st.warning("Please select date and enter stock name.")
