@@ -4,24 +4,18 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 
-# --- Location & timezone (Mumbai by default) ---
+# === Setup ===
 LAT, LON = 19.0760, 72.8777
 TZ = pytz.timezone("Asia/Kolkata")
+swe.set_ephe_path('/usr/share/ephe')
 
-# --- Configure page ---
-st.set_page_config(page_title="🌓 Moon Nakshatra + Sub Lord + Aspects", layout="wide")
-st.title("🌕 Moon Nakshatra + D9 + Sub Lord + Aspect Timeline")
+st.set_page_config(page_title="🌙 Astro Timeline", layout="wide")
+st.title("🌙 Moon Nakshatra + Sign Lord + Sub Lord + Aspect Signal")
 
-# --- Date Input ---
 selected_date = st.date_input("📅 Select Date", value=datetime(2025, 7, 14))
+symbol = st.selectbox("📈 Select Symbol", ["NIFTY", "Bank NIFTY", "GOLD", "CRUDE", "BTC", "DOW JONES"])
 
-# --- Symbol Input ---
-symbol = st.selectbox("📈 Select Symbol for Sentiment", ["NIFTY", "Bank NIFTY", "GOLD", "CRUDE", "BTC", "DOW JONES"])
-
-# --- Swiss Ephemeris setup ---
-swe.set_ephe_path('/usr/share/ephe')  # Change if using .se1 files elsewhere
-
-# --- Nakshatra mapping ---
+# === Basic Mappings ===
 nakshatras = [
     "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra", "Punarvasu", "Pushya",
     "Ashlesha", "Magha", "Purva Phalguni", "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha",
@@ -30,8 +24,20 @@ nakshatras = [
 ]
 
 planet_names = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"]
+rulers = [
+    "Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"
+] * 3  # 27 nakshatras
 
-# --- Sentiment Mapping ---
+zodiac_signs = [
+    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
+]
+
+sign_lords = [
+    "Mars", "Venus", "Mercury", "Moon", "Sun", "Mercury",
+    "Venus", "Mars", "Jupiter", "Saturn", "Saturn", "Jupiter"
+]
+
 aspect_sentiment = {
     "Conjunct": "🟡 Volatile",
     "Sextile": "🟢 Bullish",
@@ -40,89 +46,82 @@ aspect_sentiment = {
     "Opposition": "🔴 Bearish"
 }
 
-# --- Get Nakshatra ---
-def get_nakshatra(moon_long):
-    return nakshatras[int(moon_long // (360 / 27))]
+# === Functions ===
+def get_nakshatra_deg(moon_long):
+    nak_index = int(moon_long // (360 / 27))
+    nak_deg = (moon_long % (360 / 27)) * 60 / (360 / 27)  # degrees within nakshatra
+    return nakshatras[nak_index], rulers[nak_index], round(nak_deg, 2)
 
-# --- Get D9 Navamsa Sign ---
-def get_d9_sign(moon_long):
-    d9_index = int((moon_long % 30) // 3.333)
-    signs = [
-        "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-        "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
-    ]
-    base_sign = int(moon_long // 30)
-    offset = (d9_index + base_sign * 9) % 12
-    return signs[offset]
-
-# --- Get Sub Lord ---
 def get_sub_lord(jd):
-    cusps, _ = swe.houses(jd, LAT, LON)
     moon_pos, _ = swe.calc_ut(jd, swe.MOON)
     moon_long = moon_pos[0]
-    sublord_index = int((moon_long % 13.3333) // (13.3333 / 9))  # 13°20' is 1 Nakshatra
-    return planet_names[sublord_index % len(planet_names)]
+    sublord_index = int((moon_long % 13.3333) // (13.3333 / 9))
+    return planet_names[sublord_index % 9]
 
-# --- Check Moon Aspects + Signal ---
-def check_moon_aspects(jd, moon_long):
+def get_zodiac(moon_long):
+    sign_index = int(moon_long // 30)
+    return zodiac_signs[sign_index], sign_lords[sign_index]
+
+def check_aspect_signal(jd, moon_long):
     aspects = []
     signals = []
-    major_aspects = {
-        0: "Conjunct", 60: "Sextile", 90: "Square",
-        120: "Trine", 180: "Opposition"
-    }
-    orb = 3.0  # degrees of allowable error
+    orb = 3.0
+    aspect_types = {0: "Conjunct", 60: "Sextile", 90: "Square", 120: "Trine", 180: "Opposition"}
 
-    for planet_id in [swe.SUN, swe.MERCURY, swe.VENUS, swe.MARS, swe.JUPITER, swe.SATURN]:
-        pl_pos, _ = swe.calc_ut(jd, planet_id)
+    for pid in [swe.SUN, swe.MERCURY, swe.VENUS, swe.MARS, swe.JUPITER, swe.SATURN]:
+        pl_pos, _ = swe.calc_ut(jd, pid)
         diff = abs((moon_long - pl_pos[0]) % 360)
-        for angle, label in major_aspects.items():
-            if abs(diff - angle) <= orb or abs((360 - diff) - angle) <= orb:
-                aspects.append(f"{planet_names[planet_id]} {label}")
+        for deg, label in aspect_types.items():
+            if abs(diff - deg) <= orb or abs((360 - diff) - deg) <= orb:
+                aspects.append(f"{planet_names[pid]} {label}")
                 signals.append(aspect_sentiment[label])
     return ", ".join(aspects), max(signals, default="⚪ Neutral")
 
-# --- Time Setup ---
+# === Timeline ===
 start_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=4))
 end_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=23, minutes=59))
 step = timedelta(minutes=5)
 
 data = []
-prev_nak, prev_d9, prev_sub = None, None, None
+prev_vals = None
 
 curr_dt = start_dt
 while curr_dt <= end_dt:
     jd = swe.julday(curr_dt.year, curr_dt.month, curr_dt.day,
                     curr_dt.hour + curr_dt.minute / 60.0)
-
     moon_pos, _ = swe.calc_ut(jd, swe.MOON)
     moon_long = float(moon_pos[0])
 
     try:
-        nak = get_nakshatra(moon_long)
-        d9 = get_d9_sign(moon_long)
-        sub = get_sub_lord(jd)
-        aspects, signal = check_moon_aspects(jd, moon_long)
+        nak, star_lord, nak_deg = get_nakshatra_deg(moon_long)
+        zodiac, sign_lord = get_zodiac(moon_long)
+        sub_lord = get_sub_lord(jd)
+        aspects, signal = check_aspect_signal(jd, moon_long)
+        motion = "Direct"  # Moon is always direct
     except Exception as e:
-        st.warning(f"Error at {curr_dt.strftime('%H:%M')}: {e}")
         curr_dt += step
         continue
 
-    if nak != prev_nak or d9 != prev_d9 or sub != prev_sub:
+    current = (nak, zodiac, sub_lord)
+    if current != prev_vals:
         data.append({
             "Time": curr_dt.strftime("%H:%M"),
             "Symbol": symbol,
+            "Zodiac": zodiac,
+            "Sign Lord": sign_lord,
             "Nakshatra": nak,
-            "D9 Navamsa": d9,
-            "Sub Lord": sub,
+            "Star Lord": star_lord,
+            "Deg in Nak": nak_deg,
+            "Sub Lord": sub_lord,
+            "Motion": motion,
             "Moon Aspects": aspects,
             "Signal": signal
         })
-        prev_nak, prev_d9, prev_sub = nak, d9, sub
+        prev_vals = current
 
     curr_dt += step
 
-# --- Show Table ---
+# === Output ===
 df = pd.DataFrame(data)
-st.markdown(f"### 🌕 Astro Timeline for {symbol} on {selected_date.strftime('%d-%b-%Y')}")
+st.markdown(f"### 🌕 Astro Signal Timeline for {symbol} on {selected_date.strftime('%d-%b-%Y')}")
 st.dataframe(df, use_container_width=True)
