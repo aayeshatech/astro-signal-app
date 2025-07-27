@@ -1,94 +1,68 @@
 import streamlit as st
-from datetime import datetime, timedelta, time as dtime
+from datetime import datetime
 import pandas as pd
-import pytz
-from astropy.coordinates import get_body, solar_system_ephemeris, get_body_barycentric_posvel
-from astropy.coordinates import GeocentricTrueEcliptic
+import swisseph as swe
+from astropy.coordinates import get_body, GeocentricTrueEcliptic
 from astropy.time import Time
 import astropy.units as u
-import math
 
-# === Streamlit Page Config ===
-st.set_page_config(page_title="🌕 Astro Market Signal App", layout="wide")
+# === Nakshatra Names (27) ===
+nakshatras = [
+    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra",
+    "Punarvasu", "Pushya", "Ashlesha", "Magha", "Purva Phalguni", "Uttara Phalguni",
+    "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha", "Jyeshtha",
+    "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishta", "Shatabhisha",
+    "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"
+]
 
-# === UI ===
-st.title("🌌 Astro Market Signal Generator")
-st.markdown("Generate Astro Bullish/Bearish Signal Timeline by Date and Market")
+# === Streamlit Config ===
+st.set_page_config(page_title="🌓 Planetary Nakshatra Report", layout="centered")
+st.title("🌌 Planetary Nakshatra + Longitude")
 
-# === Sidebar Inputs ===
-st.sidebar.header("🗓️ Input Config")
-selected_date = st.sidebar.date_input("Select Date", datetime.now().date())
-start_time = st.sidebar.time_input("Start Time", dtime(4, 30))
-end_time = st.sidebar.time_input("End Time", dtime(23, 59))
+# === Date Picker ===
+selected_date = st.date_input("Select Date", value=datetime.now().date())
 
-market_option = st.sidebar.selectbox("Select Market", ["Nifty", "Bank Nifty", "Gold", "Crude", "BTC", "Dow Jones"])
+# === Helper: Nakshatra by Degree ===
+def get_nakshatra(degree):
+    segment = degree % 360
+    nak_index = int(segment // (360 / 27))
+    return nakshatras[nak_index]
 
-# === Define Planets for Aspects ===
-planet_list = ["moon", "sun", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto"]
+# === Main Report Function ===
+def calculate_positions(selected_date):
+    report = []
+    year, month, day = selected_date.year, selected_date.month, selected_date.day
+    jd = swe.julday(year, month, day)
+    t = Time(selected_date.isoformat())
 
-# === Aspect Check Function ===
-def calculate_aspects(target_date):
-    events = []
-    tz = pytz.timezone("Asia/Kolkata")
-    start_dt = tz.localize(datetime.combine(target_date, start_time))
-    end_dt = tz.localize(datetime.combine(target_date, end_time))
-    
-    current = start_dt
-    delta = timedelta(minutes=15)
-    
-    with solar_system_ephemeris.set('builtin'):
-        while current <= end_dt:
-            t = Time(current)
-            longitudes = {}
-            for planet in planet_list:
-                body = get_body(planet, t)
-                geo = body.transform_to(GeocentricTrueEcliptic())
-                longitudes[planet] = geo.lon.degree % 360
-            
-            # Check aspects between each planet pair
-            for i, p1 in enumerate(planet_list):
-                for p2 in planet_list[i+1:]:
-                    diff = abs(longitudes[p1] - longitudes[p2])
-                    diff = min(diff, 360 - diff)
-                    
-                    for angle, label in zip([0, 60, 90, 120, 180], ["Conjunction", "Sextile", "Square", "Trine", "Opposition"]):
-                        if abs(diff - angle) < 1.5:
-                            events.append({
-                                "time": current.strftime("%H:%M"),
-                                "aspect": label,
-                                "planets": f"{p1.capitalize()}-{p2.capitalize()}",
-                                "angle": angle
-                            })
-            current += delta
-    return pd.DataFrame(events)
+    astro_planets = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn"]
 
-# === Mapping Aspects to Sentiment ===
-def interpret_aspect(row):
-    if row['aspect'] in ["Conjunction", "Trine"]:
-        return "🟢 Bullish"
-    elif row['aspect'] in ["Square", "Opposition"]:
-        return "🔴 Bearish"
-    else:
-        return "🟡 Neutral"
+    # Astropy Planets
+    for planet in astro_planets:
+        try:
+            body = get_body(planet, t)
+            ecl = body.transform_to(GeocentricTrueEcliptic())
+            lon = ecl.lon.deg
+            nak = get_nakshatra(lon)
+            report.append({
+                'Planet': planet.capitalize(),
+                'Longitude': round(lon, 2),
+                'Nakshatra': nak,
+                'Source': 'Astropy'
+            })
+        except Exception as e:
+            report.append({'Planet': planet.capitalize(), 'Longitude': 'Error', 'Nakshatra': '-', 'Source': str(e)})
 
-# === Generate Report ===
-if st.button("🔍 Generate Astro Signal Report"):
-    st.subheader(f"📊 Astro Report for {market_option} | {selected_date.strftime('%d-%b-%Y')}")
-    report_df = calculate_aspects(selected_date)
-    if report_df.empty:
-        st.warning("No major aspects found in selected time range.")
-    else:
-        report_df['Sentiment'] = report_df.apply(interpret_aspect, axis=1)
-        report_df = report_df.sort_values(by="time")
-        for _, row in report_df.iterrows():
-            st.markdown(f"**{row['time']}** | {row['planets']} | {row['aspect']} ({row['angle']}°) → {row['Sentiment']}")
+    # Swisseph: Rahu & Ketu
+    rahu_lon = swe.calc_ut(jd, swe.TRUE_NODE)[0]
+    ketu_lon = (rahu_lon + 180) % 360
+    report.append({'Planet': 'Rahu (True)', 'Longitude': round(rahu_lon, 2), 'Nakshatra': get_nakshatra(rahu_lon), 'Source': 'Swisseph'})
+    report.append({'Planet': 'Ketu (True)', 'Longitude': round(ketu_lon, 2), 'Nakshatra': get_nakshatra(ketu_lon), 'Source': 'Swisseph'})
 
-        # Summary block
-        bullish = report_df[report_df['Sentiment'].str.contains("Bullish")].shape[0]
-        bearish = report_df[report_df['Sentiment'].str.contains("Bearish")].shape[0]
-        neutral = report_df[report_df['Sentiment'].str.contains("Neutral")].shape[0]
+    return pd.DataFrame(report)
 
-        st.markdown("---")
-        st.markdown(f"🔎 **Summary:** 🟢 Bullish: {bullish} | 🔴 Bearish: {bearish} | 🟡 Neutral: {neutral}")
-
-        st.info("Next Step: Add Trading Protocols and Risk Zones per aspect")
+# === Display Report ===
+if selected_date:
+    df = calculate_positions(selected_date)
+    st.subheader(f"📅 Planetary Nakshatra Positions — {selected_date.strftime('%d %b %Y')}")
+    st.dataframe(df)
