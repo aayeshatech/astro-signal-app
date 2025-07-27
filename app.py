@@ -1,49 +1,90 @@
+# astro_signal_app.py
+
 import streamlit as st
-import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+import pandas as pd
 import pytz
+from skyfield.api import load
+from skyfield.data import mpc
 
-# === Helper ===
-def geocode_location(city_name):
-    # Replace with your actual OpenCage API key or any geocoding API
-    GEOCODE_API_KEY = "YOUR_API_KEY"
-    url = f"https://api.opencagedata.com/geocode/v1/json?q={city_name}&key={GEOCODE_API_KEY}"
-    res = requests.get(url)
-    if res.status_code == 200:
-        data = res.json()
-        if data['results']:
-            geometry = data['results'][0]['geometry']
-            return geometry['lat'], geometry['lng']
-    return None, None
+# === Streamlit Page Setup ===
+st.set_page_config(page_title="🔭 Astro Signal Finder", layout="wide")
+st.title("🔭 Astro Signal Finder (Bullish/Bearish Timing)")
 
-# === UI ===
-st.title("♃ Astro Transit Timeline")
+# === Inputs ===
+symbol = st.text_input("Enter Symbol Name (e.g. Nifty, BankNifty, Gold)", value="Nifty")
 
-city_input = st.text_input("Enter city (e.g., Mumbai, India)", "Mumbai, India")
-date_input = st.date_input("Select Date", datetime.today())
+col1, col2 = st.columns(2)
+with col1:
+    start_dt = st.datetime_input("Start Date & Time (IST)", value=datetime.now())
+with col2:
+    end_dt = st.datetime_input("End Date & Time (IST)", value=datetime.now() + timedelta(hours=8))
 
-if st.button("🔄 Load Astro Data"):
-    with st.spinner("Fetching transit data..."):
-        lat, lon = geocode_location(city_input)
-        if not lat:
-            st.error("❌ Could not find location.")
+# === Button to Refresh ===
+if st.button("🔁 Refresh Astro Report"):
+    # Load ephemeris
+    eph = load('de421.bsp')
+    ts = load.timescale()
+
+    # Convert time range to UTC
+    ist = pytz.timezone('Asia/Kolkata')
+    start_utc = ist.localize(start_dt).astimezone(pytz.utc)
+    end_utc = ist.localize(end_dt).astimezone(pytz.utc)
+
+    # Time list every 5 minutes
+    times = []
+    current = start_utc
+    while current <= end_utc:
+        times.append(ts.utc(current.year, current.month, current.day, current.hour, current.minute))
+        current += timedelta(minutes=5)
+
+    # Load planet data
+    planets = eph
+    moon = planets['moon']
+    sun = planets['sun']
+    earth = planets['earth']
+
+    # Transit detection
+    data = []
+    last_status = None
+    for t in times:
+        astrometric = earth.at(t).observe(moon).apparent()
+        ecliptic = astrometric.ecliptic_latlon()
+        moon_deg = ecliptic[1].degrees % 360
+
+        # Logic: Example - Use moon position to simulate bullish/bearish
+        if 0 <= moon_deg < 90:
+            status = "Bullish"
+        elif 90 <= moon_deg < 180:
+            status = "Bearish"
+        elif 180 <= moon_deg < 270:
+            status = "Volatile"
         else:
-            date_str = date_input.strftime("%Y-%m-%d")
-            api_url = f"https://data.astronomics.ai/almanac/?lat={lat}&lon={lon}&date={date_str}"
+            status = "Bullish"
 
-            try:
-                response = requests.get(api_url)
-                if response.status_code == 200:
-                    data = response.json()
-                    transits = data.get("transits", [])
-                    
-                    if not transits:
-                        st.warning("⚠ No transits found.")
-                    else:
-                        st.subheader(f"Transits for {date_str}")
-                        for item in transits:
-                            st.write(f"🪐 **{item['planet']}** → {item['event']} at **{item['time']}**")
-                else:
-                    st.error(f"❌ Failed to fetch data. Status: {response.status_code}")
-            except Exception as e:
-                st.error(f"❌ Error fetching data: {e}")
+        if status != last_status:
+            data.append({
+                "Time (IST)": t.utc_datetime().astimezone(ist).strftime('%Y-%m-%d %H:%M'),
+                "Moon Degree": round(moon_deg, 2),
+                "Signal": status
+            })
+            last_status = status
+
+    # === Display Result ===
+    df = pd.DataFrame(data)
+    st.subheader(f"🕰️ Astro Transits for {symbol}")
+    st.dataframe(df, use_container_width=True)
+
+    # === Summary ===
+    st.subheader("📊 Summary")
+    bullish_periods = df[df["Signal"] == "Bullish"]
+    bearish_periods = df[df["Signal"] == "Bearish"]
+
+    if not bullish_periods.empty:
+        st.success(f"📈 Best Long Bullish Start: {bullish_periods.iloc[0]['Time (IST)']}")
+
+    if not bearish_periods.empty:
+        st.error(f"📉 Best Short Bearish Start: {bearish_periods.iloc[0]['Time (IST)']}")
+
+else:
+    st.info("⏳ Enter details and press **Refresh Astro Report** to begin.")
