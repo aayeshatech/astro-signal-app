@@ -1,83 +1,69 @@
 import streamlit as st
 import requests
-import pandas as pd
-from datetime import datetime, timedelta, time
+import json
+from datetime import date, datetime
 
-st.set_page_config(page_title="🌌 Astro Transit Signal", layout="wide")
+# === Streamlit Page Config ===
+st.set_page_config(page_title="🔭 Astro Transits Viewer", layout="wide")
 
-# --- Title
-st.title("🌠 Intraday Astro Signal Report (Transit-Based)")
-st.markdown("Using [Astronomics.ai Almanac](https://data.astronomics.ai/almanac/)")
+st.title("🔭 Vedic Astro Transits Viewer (Almanac API)")
+st.markdown("View planetary transits time-wise from [Astronomics Almanac](https://data.astronomics.ai/almanac/).")
 
-# --- Inputs
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    date = st.date_input("Select Date", datetime.today())
-with col2:
-    start_time = st.time_input("Start Time", time(9, 15))
-with col3:
-    end_time = st.time_input("End Time", time(15, 30))
-with col4:
-    stock = st.selectbox("Select Index", ["Nifty", "Bank Nifty", "Gold", "Crude", "BTC", "Dow Jones"])
+# === Input Section ===
+selected_date = st.date_input("📅 Select Date", date.today())
 
-if st.button("🔄 Refresh Astro Report"):
-    # --- Format inputs
-    date_str = date.strftime('%Y-%m-%d')
-    start_dt = datetime.combine(date, start_time)
-    end_dt = datetime.combine(date, end_time)
-
-    # --- Fetch data from Astronomics API
-    url = f"https://data.astronomics.ai/almanac/?date={date_str}"
+# === Fetch Astro Data ===
+def fetch_astro_data(date_str):
+    url = f"https://data.astronomics.ai/almanac?date={date_str}"
     try:
-        r = requests.get(url)
-        data = r.json()
-        events = data['events']
+        response = requests.get(url, timeout=10)
 
-        df = pd.DataFrame(events)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        if response.status_code != 200:
+            return None, f"❌ HTTP {response.status_code}: Failed to fetch astro data."
 
-        # Filter by time window
-        df = df[(df['timestamp'] >= start_dt) & (df['timestamp'] <= end_dt)]
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            return None, "❌ Invalid JSON received from astro API."
 
-        if df.empty:
-            st.warning("⚠️ No astro transit found for the selected time range.")
-        else:
-            # Format for better readability
-            df['Time'] = df['timestamp'].dt.strftime('%H:%M')
-            df['Planet'] = df['planet'].str.capitalize()
-            df['Event'] = df['event_type'].str.replace("_", " ").str.title()
-            df = df[['Time', 'Planet', 'Event']]
+        if not data or "transits" not in data:
+            return None, "⚠️ No transit data found in API response."
 
-            # --- Add logic for Bullish/Bearish Tagging (very basic)
-            bias_map = {
-                'Moon Enters Aries': '🟢 Bullish',
-                'Moon Enters Scorpio': '🔴 Bearish',
-                'Moon Combust': '🔴 Bearish',
-                'Venus Enters Taurus': '🟢 Bullish',
-                'Mars Enters Gemini': '🟡 Volatile',
-                'Rahu Ketu Transit': '🔴 Reversal',
-            }
+        return data, None
 
-            df['Sentiment'] = df['Event'].map(bias_map).fillna('🟡 Neutral')
+    except requests.exceptions.RequestException as e:
+        return None, f"❌ Network error: {e}"
 
-            # Show table
-            st.subheader(f"🔭 Astro Transit Report – {stock}")
-            st.dataframe(df, use_container_width=True)
+# === Display Results ===
+st.subheader(f"📈 Planetary Transits for {selected_date.isoformat()}")
+data, error = fetch_astro_data(selected_date.isoformat())
 
-            # --- Summary Block
-            st.subheader("🧠 Summary Recommendation")
-            long_times = df[df['Sentiment'] == '🟢 Bullish']['Time'].tolist()
-            short_times = df[df['Sentiment'] == '🔴 Bearish']['Time'].tolist()
+if error:
+    st.error(error)
+elif data:
+    transits = data["transits"]
+    if not transits:
+        st.warning("No transits found for this date.")
+    else:
+        # Sort by time
+        sorted_transits = sorted(transits, key=lambda x: x.get("timestamp", ""))
+        for t in sorted_transits:
+            planet = t.get("planet", "Unknown")
+            event = t.get("event", "Transit")
+            nakshatra = t.get("nakshatra", {}).get("name", "")
+            sign = t.get("sign", {}).get("name", "")
+            time_str = t.get("timestamp", "N/A")
 
-            if long_times:
-                st.success(f"📈 **Best Long Period(s)**: {', '.join(long_times)}")
-            else:
-                st.info("📈 No strong long signals found")
+            # Format time nicely
+            try:
+                t_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                local_time = t_dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                local_time = time_str
 
-            if short_times:
-                st.error(f"📉 **Best Short Period(s)**: {', '.join(short_times)}")
-            else:
-                st.info("📉 No strong short signals found")
+            st.markdown(f"🔹 **{planet}** – `{event}`")
+            st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;🕒 `{local_time}` &nbsp;&nbsp;🔯 Nakshatra: `{nakshatra}` &nbsp;&nbsp;♒ Sign: `{sign}`")
+            st.markdown("---")
+else:
+    st.info("Select a date to view planetary transits.")
 
-    except Exception as e:
-        st.error(f"Error fetching astro data: {e}")
