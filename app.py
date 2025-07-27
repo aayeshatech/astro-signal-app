@@ -1,34 +1,50 @@
-from datetime import datetime
+import streamlit as st
+from datetime import datetime, time
 import pytz
 
-# Input date and times
-date_str = "2025-07-12"
-start_time_str = "06:30"
-end_time_str = "20:30"
+# Set up Streamlit page
+st.set_page_config(page_title="🪐 Astro Event Filter", layout="wide")
+st.title("🪐 Astro Transit Timeline")
 
-tz = pytz.timezone('Asia/Kolkata')
+# Timezone
+tz = pytz.timezone("Asia/Kolkata")
 
-# Convert to datetime with timezone
-start_dt = tz.localize(datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M"))
-end_dt = tz.localize(datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M"))
-
-# Sample event list (time as string, event name, signal)
-events = [
-    ("10:15", "Moon conjunct Saturn", "Bearish"),
-    ("11:30", "Venus trine Jupiter", "Bullish"),
-    ("13:05", "Mars sextile Mercury", "Volatile"),
-    ("14:40", "Sun opposite Neptune", "Bearish"),
-    ("16:20", "Moon trine Venus", "Bullish")
+# --- Sample Astro Events (for 12 July 2025) ---
+astro_events = [
+    ("10:15", "Moon conjunct Saturn", "🔴 Bearish"),
+    ("11:30", "Venus trine Jupiter", "🟢 Bullish"),
+    ("13:05", "Mars sextile Mercury", "🟡 Volatile"),
+    ("14:40", "Sun opposite Neptune", "🔴 Bearish"),
+    ("16:20", "Moon trine Venus", "🟢 Bullish"),
 ]
 
-filtered_events = []
-for t_str, event, signal in events:
-    event_dt = tz.localize(datetime.strptime(f"{date_str} {t_str}", "%Y-%m-%d %H:%M"))
-    if start_dt <= event_dt <= end_dt:
-        filtered_events.append((t_str, event, signal))
+# --- Streamlit User Inputs ---
+selected_date = st.date_input("📅 Select Date", value=datetime(2025, 7, 12))
 
-# Print filtered events
-print("Astro Events on", date_str, "from", start_time_str, "to", end_time_str)
-print("Time\tEvent\tSignal")
-for t, e, s in filtered_events:
-    print(f"{t}\t{e}\t{s}")
+col1, col2 = st.columns(2)
+with col1:
+    start_time = st.time_input("⏰ Start Time", value=time(6, 30))
+with col2:
+    end_time = st.time_input("⏰ End Time", value=time(20, 30))
+
+# Convert inputs to timezone-aware datetime
+start_dt = tz.localize(datetime.combine(selected_date, start_time))
+end_dt = tz.localize(datetime.combine(selected_date, end_time))
+
+# --- Filter Events within Selected Time Range ---
+filtered_events = []
+for t_str, event, signal in astro_events:
+    event_dt = tz.localize(datetime.combine(selected_date, datetime.strptime(t_str, "%H:%M").time()))
+    if start_dt <= event_dt <= end_dt:
+        filtered_events.append({
+            "Time": t_str,
+            "Event": event,
+            "Signal": signal
+        })
+
+# --- Display Results ---
+st.markdown(f"### 🪐 Astro Events on {selected_date.strftime('%d-%b-%Y')} from {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}")
+if filtered_events:
+    st.table(filtered_events)
+else:
+    st.warning("❌ No astro events found in the selected time range.")
