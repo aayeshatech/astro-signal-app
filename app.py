@@ -3,7 +3,6 @@ import swisseph as swe
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
-import math
 
 # --- Location & timezone (Mumbai by default) ---
 LAT, LON = 19.0760, 72.8777
@@ -16,6 +15,9 @@ st.title("🌕 Moon Nakshatra + D9 + Sub Lord + Aspect Timeline")
 # --- Date Input ---
 selected_date = st.date_input("📅 Select Date", value=datetime(2025, 7, 14))
 
+# --- Symbol Input ---
+symbol = st.selectbox("📈 Select Symbol for Sentiment", ["NIFTY", "Bank NIFTY", "GOLD", "CRUDE", "BTC", "DOW JONES"])
+
 # --- Swiss Ephemeris setup ---
 swe.set_ephe_path('/usr/share/ephe')  # Change if using .se1 files elsewhere
 
@@ -27,8 +29,16 @@ nakshatras = [
     "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"
 ]
 
-# --- Planet names ---
 planet_names = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"]
+
+# --- Sentiment Mapping ---
+aspect_sentiment = {
+    "Conjunct": "🟡 Volatile",
+    "Sextile": "🟢 Bullish",
+    "Square": "🔴 Bearish",
+    "Trine": "🟢 Bullish",
+    "Opposition": "🔴 Bearish"
+}
 
 # --- Get Nakshatra ---
 def get_nakshatra(moon_long):
@@ -47,16 +57,16 @@ def get_d9_sign(moon_long):
 
 # --- Get Sub Lord ---
 def get_sub_lord(jd):
-    # Use cusp calculation to simulate Sub Lord using KP method (Placidus)
     cusps, _ = swe.houses(jd, LAT, LON)
     moon_pos, _ = swe.calc_ut(jd, swe.MOON)
     moon_long = moon_pos[0]
     sublord_index = int((moon_long % 13.3333) // (13.3333 / 9))  # 13°20' is 1 Nakshatra
     return planet_names[sublord_index % len(planet_names)]
 
-# --- Check for major aspects with Moon ---
+# --- Check Moon Aspects + Signal ---
 def check_moon_aspects(jd, moon_long):
     aspects = []
+    signals = []
     major_aspects = {
         0: "Conjunct", 60: "Sextile", 90: "Square",
         120: "Trine", 180: "Opposition"
@@ -69,7 +79,8 @@ def check_moon_aspects(jd, moon_long):
         for angle, label in major_aspects.items():
             if abs(diff - angle) <= orb or abs((360 - diff) - angle) <= orb:
                 aspects.append(f"{planet_names[planet_id]} {label}")
-    return ", ".join(aspects) if aspects else ""
+                signals.append(aspect_sentiment[label])
+    return ", ".join(aspects), max(signals, default="⚪ Neutral")
 
 # --- Time Setup ---
 start_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=4))
@@ -91,7 +102,7 @@ while curr_dt <= end_dt:
         nak = get_nakshatra(moon_long)
         d9 = get_d9_sign(moon_long)
         sub = get_sub_lord(jd)
-        aspects = check_moon_aspects(jd, moon_long)
+        aspects, signal = check_moon_aspects(jd, moon_long)
     except Exception as e:
         st.warning(f"Error at {curr_dt.strftime('%H:%M')}: {e}")
         curr_dt += step
@@ -100,10 +111,12 @@ while curr_dt <= end_dt:
     if nak != prev_nak or d9 != prev_d9 or sub != prev_sub:
         data.append({
             "Time": curr_dt.strftime("%H:%M"),
+            "Symbol": symbol,
             "Nakshatra": nak,
             "D9 Navamsa": d9,
             "Sub Lord": sub,
-            "Moon Aspects": aspects
+            "Moon Aspects": aspects,
+            "Signal": signal
         })
         prev_nak, prev_d9, prev_sub = nak, d9, sub
 
@@ -111,5 +124,5 @@ while curr_dt <= end_dt:
 
 # --- Show Table ---
 df = pd.DataFrame(data)
-st.markdown(f"### 🌕 Astro Timeline for {selected_date.strftime('%d-%b-%Y')}")
+st.markdown(f"### 🌕 Astro Timeline for {symbol} on {selected_date.strftime('%d-%b-%Y')}")
 st.dataframe(df, use_container_width=True)
