@@ -1,49 +1,34 @@
-import streamlit as st
 from datetime import datetime
-import pandas as pd
+import pytz
 
-astro_events = [
-    {"time": "10:15", "event": "Moon conjunct Saturn", "signal": "Bearish", "color": "red"},
-    {"time": "11:30", "event": "Venus trine Jupiter", "signal": "Bullish", "color": "green"},
-    {"time": "13:05", "event": "Mars sextile Mercury", "signal": "Volatile", "color": "orange"},
-    {"time": "14:40", "event": "Sun opposite Neptune", "signal": "Bearish", "color": "red"},
-    {"time": "16:20", "event": "Moon trine Venus", "signal": "Bullish", "color": "green"},
+# Input date and times
+date_str = "2025-07-12"
+start_time_str = "06:30"
+end_time_str = "20:30"
+
+tz = pytz.timezone('Asia/Kolkata')
+
+# Convert to datetime with timezone
+start_dt = tz.localize(datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M"))
+end_dt = tz.localize(datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M"))
+
+# Sample event list (time as string, event name, signal)
+events = [
+    ("10:15", "Moon conjunct Saturn", "Bearish"),
+    ("11:30", "Venus trine Jupiter", "Bullish"),
+    ("13:05", "Mars sextile Mercury", "Volatile"),
+    ("14:40", "Sun opposite Neptune", "Bearish"),
+    ("16:20", "Moon trine Venus", "Bullish")
 ]
 
-st.title("🪐 Astro Transit Timeline for NIFTY")
+filtered_events = []
+for t_str, event, signal in events:
+    event_dt = tz.localize(datetime.strptime(f"{date_str} {t_str}", "%Y-%m-%d %H:%M"))
+    if start_dt <= event_dt <= end_dt:
+        filtered_events.append((t_str, event, signal))
 
-selected_date = st.date_input("Select Date", datetime(2025, 7, 9))
-start_time_str = st.text_input("Start Time (HH:MM, 24h format)", "06:30")
-end_time_str = st.text_input("End Time (HH:MM, 24h format)", "20:30")
-
-try:
-    start_time = datetime.strptime(start_time_str, "%H:%M").time()
-    end_time = datetime.strptime(end_time_str, "%H:%M").time()
-except ValueError:
-    st.error("Please enter valid start and end times in HH:MM format.")
-    st.stop()
-
-for event in astro_events:
-    event["time_obj"] = datetime.strptime(event["time"], "%H:%M").time()
-
-filtered_events = [e for e in astro_events if start_time <= e["time_obj"] <= end_time]
-
-st.markdown(f"### Astro Events on {selected_date.strftime('%Y-%m-%d')} from {start_time_str} to {end_time_str}")
-
-if filtered_events:
-    # Prepare formatted data with colored signals
-    rows = []
-    for e in filtered_events:
-        signal_text = f"<span style='color:{e['color']}; font-weight:bold;'>{e['signal']}</span>"
-        rows.append({"Time": e["time"], "Event": e["event"], "Signal": signal_text})
-
-    # Create DataFrame
-    df = pd.DataFrame(rows)
-
-    # Render table with unsafe_allow_html to enable color styling
-    st.write(
-        df.to_html(escape=False, index=False),
-        unsafe_allow_html=True
-    )
-else:
-    st.info("No astro events found in the selected time range.")
+# Print filtered events
+print("Astro Events on", date_str, "from", start_time_str, "to", end_time_str)
+print("Time\tEvent\tSignal")
+for t, e, s in filtered_events:
+    print(f"{t}\t{e}\t{s}")
