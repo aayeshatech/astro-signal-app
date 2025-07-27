@@ -1,4 +1,6 @@
 streamlit
-pandas
 pytz
-skyfield
+pandas
+astropy
+requests
+bs4
