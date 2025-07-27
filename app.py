@@ -1,63 +1,71 @@
 import streamlit as st
+import swisseph as swe
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime, timedelta
 import pytz
 
-# Set timezone
-tz = pytz.timezone("Asia/Kolkata")
+# --- Location & timezone (default Mumbai) ---
+LAT, LON = 19.0760, 72.8777
+TZ = pytz.timezone("Asia/Kolkata")
 
-# Page setup
-st.set_page_config(page_title="🪐 Astro Transit Timeline", layout="wide")
-st.title("🪐 Astro Transit Timeline Viewer")
+# --- Date Input ---
+st.set_page_config(page_title="🌓 Moon Nakshatra + Sub Lord", layout="wide")
+st.title("🌕 Moon Nakshatra + D9 + Sub Lord Timeline")
 
-# --- User input: Date and time range
 selected_date = st.date_input("📅 Select Date", value=datetime(2025, 7, 14))
-col1, col2 = st.columns(2)
-with col1:
-    start_time = st.time_input("⏰ Start Time", value=time(6, 0))
-with col2:
-    end_time = st.time_input("⏰ End Time", value=time(20, 15))
 
-# Convert input times to datetime
-start_dt = tz.localize(datetime.combine(selected_date, start_time))
-end_dt = tz.localize(datetime.combine(selected_date, end_time))
+# --- Swiss Ephemeris Config ---
+swe.set_ephe_path('/usr/share/ephe')  # Update if you're using local .se1 files
 
-# --- Upload Excel File ---
-uploaded_file = st.file_uploader("📤 Upload Astro Events Excel File (.xlsx)", type=["xlsx"])
+# --- Nakshatra mapping ---
+nakshatras = [
+    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra", "Punarvasu", "Pushya",
+    "Ashlesha", "Magha", "Purva Phalguni", "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha",
+    "Anuradha", "Jyeshtha", "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishta",
+    "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"
+]
 
-if uploaded_file:
-    try:
-        df = pd.read_excel(uploaded_file)
-        st.success("✅ File uploaded successfully!")
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
-        st.stop()
-else:
-    st.info("Using sample data below until a file is uploaded.")
-    sample_data = {
-        "Date": ["2025-07-12", "2025-07-12", "2025-07-14", "2025-07-14", "2025-07-14"],
-        "Time": ["10:15", "11:30", "08:50", "11:10", "17:20"],
-        "Event": [
-            "Moon conjunct Saturn",
-            "Venus trine Jupiter",
-            "Venus conjunct Moon",
-            "Mars opposite Neptune",
-            "Mercury trine Pluto"
-        ],
-        "Signal": ["🔴 Bearish", "🟢 Bullish", "🟢 Bullish", "🔴 Bearish", "🟢 Bullish"]
-    }
-    df = pd.DataFrame(sample_data)
+def get_nakshatra(moon_long):
+    return nakshatras[int(moon_long // (360 / 27))]
 
-# --- Process datetime column
-df["datetime"] = pd.to_datetime(df["Date"].astype(str) + " " + df["Time"])
-df["datetime"] = df["datetime"].dt.tz_localize("Asia/Kolkata")  # Ensure timezone awareness
+def get_d9_sign(moon_long):
+    # 3°20' per Navamsa
+    d9_index = int((moon_long % 30) // 3.333)
+    signs = [
+        "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+        "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
+    ]
+    base_sign = int(moon_long // 30)
+    offset = (d9_index + base_sign * 9) % 12
+    return signs[offset]
 
-# --- Filter by selected datetime range
-filtered_df = df[(df["datetime"] >= start_dt) & (df["datetime"] <= end_dt)]
+# --- Time Loop to Track Transitions ---
+start_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=4))
+end_dt = TZ.localize(datetime.combine(selected_date, datetime.min.time()) + timedelta(hours=23, minutes=59))
+step = timedelta(minutes=5)
 
-# --- Display Output
-st.markdown(f"### 🪐 Astro Events on {selected_date.strftime('%d-%b-%Y')} from {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}")
-if not filtered_df.empty:
-    st.dataframe(filtered_df[["Time", "Event", "Signal"]].reset_index(drop=True), use_container_width=True)
-else:
-    st.warning("⚠️ No astro events found in the selected time range.")
+data = []
+prev_nak, prev_d9 = None, None
+
+curr_dt = start_dt
+while curr_dt <= end_dt:
+    jd = swe.julday(curr_dt.year, curr_dt.month, curr_dt.day, curr_dt.hour + curr_dt.minute / 60.0)
+    moon_long, _ = swe.calc_ut(jd, swe.MOON)[0:2]
+    
+    nak = get_nakshatra(moon_long)
+    d9 = get_d9_sign(moon_long)
+
+    if nak != prev_nak or d9 != prev_d9:
+        data.append({
+            "Time": curr_dt.strftime("%H:%M"),
+            "Nakshatra": nak,
+            "D9 Navamsa": d9
+        })
+        prev_nak, prev_d9 = nak, d9
+
+    curr_dt += step
+
+df = pd.DataFrame(data)
+
+st.markdown(f"### 🌕 Moon Nakshatra + D9 Navamsa Ingress — {selected_date.strftime('%d-%b-%Y')}")
+st.dataframe(df, use_container_width=True)
