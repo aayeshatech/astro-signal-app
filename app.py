@@ -26,10 +26,11 @@ nakshatras = [
 ]
 
 def get_nakshatra(moon_long):
+    moon_long = float(moon_long)  # Ensure float
     return nakshatras[int(moon_long // (360 / 27))]
 
 def get_d9_sign(moon_long):
-    # 3°20' per Navamsa
+    moon_long = float(moon_long)  # Ensure float
     d9_index = int((moon_long % 30) // 3.333)
     signs = [
         "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
@@ -50,8 +51,9 @@ prev_nak, prev_d9 = None, None
 curr_dt = start_dt
 while curr_dt <= end_dt:
     jd = swe.julday(curr_dt.year, curr_dt.month, curr_dt.day, curr_dt.hour + curr_dt.minute / 60.0)
-    moon_long, _ = swe.calc_ut(jd, swe.MOON)[0:2]
-    
+    moon_calc = swe.calc_ut(jd, swe.MOON)
+    moon_long = moon_calc[0]  # Just the longitude
+
     nak = get_nakshatra(moon_long)
     d9 = get_d9_sign(moon_long)
 
