@@ -1,65 +1,59 @@
 import streamlit as st
-from datetime import datetime, time, timedelta
 import pandas as pd
+from datetime import datetime, timedelta
 
-# ==== Page Config ====
-st.set_page_config(page_title="🔭 Astro Sentiment Timeline", layout="centered")
-
-st.title("📈 Astro Sentiment Timeline by Date & Time")
-
-# ==== Input Widgets ====
-col1, col2 = st.columns(2)
-with col1:
-    selected_date = st.date_input("Select Date", value=datetime(2025, 7, 25))
-with col2:
-    selected_stock = st.selectbox("Select Stock/Index", ["Nifty", "BankNifty", "Gold", "Crude", "BTC", "Dow Jones"])
-
-time_range = st.slider("Select Time Range", value=(time(4, 30), time(18, 30)), format="HH:mm")
-
-# ==== Sample Astro Timeline Generator ====
-def get_mocked_astro_sentiment(selected_date, start_time, end_time, stock):
-    # This simulates a DeepSeek-style astro report.
-    sample_data = [
-        {"Time": "00:51 – 04:43", "Sub-Lord": "Venus (Ve)", "Nakshatra": "Pushya (Sa)", "Aspect": "Moon-Venus", "Sentiment": "🟢 Bullish", "Market Move": "Steady upside", "Bias": "Buy on dips"},
-        {"Time": "04:43 – 05:53", "Sub-Lord": "Sun (Su)", "Nakshatra": "Pushya (Sa)", "Aspect": "Moon-Sun", "Sentiment": "🔴 Bearish", "Market Move": "Risk of gap-down", "Bias": "Avoid longs"},
-        {"Time": "05:53 – 07:50", "Sub-Lord": "Moon (Mo)", "Nakshatra": "Pushya (Sa)", "Aspect": "Stable emotions", "Sentiment": "🟢 Bullish", "Market Move": "Recovery", "Bias": "Go Long"},
-        {"Time": "07:50 – 09:12", "Sub-Lord": "Mars (Ma)", "Nakshatra": "Pushya (Sa)", "Aspect": "Aggressive Mars", "Sentiment": "🟠 Neutral", "Market Move": "Volatile", "Bias": "Wait"},
-        {"Time": "09:12 – 12:43", "Sub-Lord": "Rahu (Ra)", "Nakshatra": "Pushya (Sa)", "Aspect": "Rahu Manipulation", "Sentiment": "🔴 Bearish", "Market Move": "Sharp correction", "Bias": "Caution"},
-        {"Time": "12:43 – 15:51", "Sub-Lord": "Jupiter (Ju)", "Nakshatra": "Pushya (Sa)", "Aspect": "Expansion", "Sentiment": "🟢 Bullish", "Market Move": "Heavyweight rally", "Bias": "Best for longs"},
-        {"Time": "15:51 – 17:52", "Sub-Lord": "Ketu (Ke)", "Nakshatra": "Ashlesha (Me)", "Aspect": "Mercury Rx", "Sentiment": "🔴 Bearish", "Market Move": "Sudden drop", "Bias": "Avoid"},
-        {"Time": "17:52 – EOD", "Sub-Lord": "Ketu (Ke)", "Nakshatra": "Ashlesha (Me)", "Aspect": "Weak Declination", "Sentiment": "🟠 Choppy", "Market Move": "Sideways", "Bias": "Stay flat"},
+# === Simulated Astro Data Function (Mimics DeepSeek AI Output) ===
+def get_astro_report(date_str, start_time, end_time, symbol):
+    # Simulated transitions during the day
+    transitions = [
+        ("09:15", "10:03", "Moon", "Pushya", "Moon-Sun", "🟢 Bullish", "Mild upmove", "Buy on dips"),
+        ("10:03", "10:58", "Sun", "Pushya", "Moon-Venus", "🔴 Bearish", "Sudden drop", "Avoid longs"),
+        ("10:58", "11:33", "Mars", "Pushya", "Moon-Mars", "🟠 Neutral", "Volatile", "Wait"),
+        ("11:33", "12:43", "Rahu", "Pushya", "Moon-Rahu", "🔴 Bearish", "False breakout", "Hedge"),
+        ("12:43", "13:49", "Jupiter", "Pushya", "Moon-Jupiter", "🟢 Bullish", "Index rally", "Go long"),
+        ("13:49", "14:55", "Saturn", "Ashlesha", "Moon-Saturn", "🟠 Choppy", "Sideways", "Stay flat"),
+        ("14:55", "15:30", "Mercury", "Ashlesha", "Mercury Retro", "🔴 Bearish", "Drop likely", "Avoid trade"),
     ]
 
-    # Filter by time range
-    filtered_data = []
-    for row in sample_data:
-        try:
-            time_range_str = row["Time"].replace("EOD", "23:59")
-            start_str, end_str = time_range_str.split("–")
-            t_start = datetime.strptime(start_str.strip(), "%H:%M").time()
-            t_end = datetime.strptime(end_str.strip(), "%H:%M").time()
+    report_data = []
+    for t in transitions:
+        from_time = datetime.strptime(f"{date_str} {t[0]}", "%Y-%m-%d %H:%M")
+        to_time = datetime.strptime(f"{date_str} {t[1]}", "%Y-%m-%d %H:%M")
+        if from_time.time() >= start_time and to_time.time() <= end_time:
+            report_data.append({
+                "Time": f"{t[0]} – {t[1]}",
+                "Sub-Lord": t[2],
+                "Nakshatra": t[3],
+                "Aspect": t[4],
+                "Sentiment": t[5],
+                "Market Move": t[6],
+                "Bias": t[7]
+            })
 
-            if t_start >= start_time and t_start <= end_time:
-                filtered_data.append(row)
-        except:
-            continue
+    return pd.DataFrame(report_data)
 
-    return pd.DataFrame(filtered_data)
+# === Streamlit UI ===
+st.set_page_config("🔭 Astro Market Report", layout="wide")
 
-# ==== Process ====
-if st.button("🔍 Generate Astro Sentiment Report"):
-    df_result = get_mocked_astro_sentiment(
-        selected_date,
-        start_time=time_range[0],
-        end_time=time_range[1],
-        stock=selected_stock
-    )
+st.title("🔭 Astro Market Intraday Report")
+st.markdown("Get planetary sentiment breakdown from DeepSeek-style logic for Nifty, Bank Nifty, Gold, etc.")
 
-    if not df_result.empty:
-        st.success(f"Showing Astro Sentiment for {selected_stock} on {selected_date.strftime('%d-%b-%Y')}")
-        st.dataframe(df_result, use_container_width=True)
-    else:
-        st.warning("No sentiment data found for selected time range.")
+# Input widgets
+selected_date = st.date_input("📅 Select Date", value=datetime.today())
+col1, col2 = st.columns(2)
+with col1:
+    start_str = st.time_input("🕒 Start Time", value=datetime.strptime("09:15", "%H:%M").time())
+with col2:
+    end_str = st.time_input("🕓 End Time", value=datetime.strptime("15:30", "%H:%M").time())
 
-# ==== Footer ====
-st.caption("🔭 Powered by Astro-Simulation (DeepSeek-style mock) – No API access yet")
+symbol = st.text_input("📈 Enter Stock/Index (e.g., Nifty, BankNifty, Gold)", value="Nifty")
+
+# Button to trigger search
+if st.button("🔍 Get Astro Market Report"):
+    with st.spinner("Fetching planetary transitions..."):
+        df = get_astro_report(str(selected_date), start_str, end_str, symbol)
+        if not df.empty:
+            st.success(f"Showing astro report for {symbol} on {selected_date}")
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.warning("No transitions found for selected time range.")
