@@ -1,53 +1,81 @@
 import streamlit as st
 import requests
-import pandas as pd
 from datetime import datetime
+import pytz
 
-# === Streamlit Page Config ===
-st.set_page_config(page_title="🪐 Astro Transit Report", layout="wide")
+# === Streamlit Config ===
+st.set_page_config(page_title="🌍 Astro Transit Report", layout="centered")
 
-# === UI Inputs ===
-st.title("🌠 Astro Transit Report")
-selected_date = st.date_input("Select date", datetime.today())
-location = st.text_input("Enter location (lat,lon)", "19.0760,72.8777")  # Default: Mumbai
-refresh_data = st.button("🔄 Refresh Astro Data")
+# === Title ===
+st.title("🔭 Astro Transit Report")
+
+# === Input: City Name and Date ===
+city = st.text_input("Enter city name", value="Mumbai")
+selected_date = st.date_input("Select Date", value=datetime.today())
+refresh = st.button("🔁 Refresh Data")
+
+# === Geolocation Helper ===
+def get_lat_lon(city_name):
+    try:
+        api_key = "YOUR_OPENCAGE_API_KEY"  # Replace with your real key
+        geo_url = f"https://api.opencagedata.com/geocode/v1/json?q={city_name}&key={api_key}"
+        response = requests.get(geo_url)
+        data = response.json()
+        lat = data["results"][0]["geometry"]["lat"]
+        lon = data["results"][0]["geometry"]["lng"]
+        return lat, lon
+    except:
+        return None, None
 
 # === Fetch Astro Data ===
-@st.cache_data(ttl=3600, show_spinner="Fetching astro data...")
-def fetch_astro_data(date, loc):
+def fetch_astro_data(lat, lon, date):
     try:
-        base_url = "https://data.astronomics.ai/almanac"
-        params = {
-            "date": date.strftime("%Y-%m-%d"),
-            "location": loc
-        }
-        response = requests.get(base_url, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            return data
-        else:
-            st.error(f"❌ HTTP {response.status_code} error while fetching data.")
-            return None
+        url = f"https://data.astronomics.ai/almanac/?latitude={lat}&longitude={lon}&date={date}"
+        response = requests.get(url)
+        return response.json()
     except Exception as e:
         st.error(f"❌ Error fetching data: {e}")
         return None
 
-# === Trigger Fetch ===
-if refresh_data:
-    astro_data = fetch_astro_data(selected_date, location)
-
-    if astro_data:
-        st.success(f"✅ Loaded astro data for {selected_date}")
-        st.json(astro_data)  # Show raw if needed
-
-        # Sample processing if format is known (example only)
-        if "transits" in astro_data:
-            df = pd.DataFrame(astro_data["transits"])
-            st.dataframe(df)
-        else:
-            st.warning("⚠️ 'transits' field not found in data.")
-    else:
+# === Format and Display Astro Transits ===
+def show_transits(data):
+    if not data or "transits" not in data:
         st.error("❌ Could not load astro data.")
-else:
-    st.info("👈 Select date/location and click 'Refresh Astro Data'.")
+        return
 
+    st.subheader("📆 Transits for " + selected_date.strftime("%Y-%m-%d"))
+
+    transits = data["transits"]
+    rows = []
+
+    for t in transits:
+        planet = t["planet"]
+        sign = t["sign"]
+        nakshatra = t["nakshatra"]
+        start = t["start"]
+        end = t["end"]
+        start_time = datetime.fromisoformat(start).strftime("%H:%M")
+        end_time = datetime.fromisoformat(end).strftime("%H:%M")
+        rows.append((start_time + " – " + end_time, planet, sign, nakshatra))
+
+    df = st.dataframe(
+        {
+            "🕒 Time": [r[0] for r in rows],
+            "🌍 Planet": [r[1] for r in rows],
+            "♒ Sign": [r[2] for r in rows],
+            "✨ Nakshatra": [r[3] for r in rows],
+        }
+    )
+
+# === Main Logic ===
+if city and selected_date and refresh:
+    with st.spinner("Fetching coordinates..."):
+        lat, lon = get_lat_lon(city)
+
+    if lat is None:
+        st.error("❌ Could not find location.")
+    else:
+        with st.spinner("Fetching transit data..."):
+            date_str = selected_date.strftime("%Y-%m-%d")
+            astro_data = fetch_astro_data(lat, lon, date_str)
+            show_transits(astro_data)
