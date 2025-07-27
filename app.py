@@ -1,92 +1,80 @@
 import streamlit as st
-from datetime import datetime, timedelta, time as dtime
 import pandas as pd
+from datetime import datetime, timedelta, time
 
-# --- UI Inputs ---
-st.set_page_config("🔭 Astro Market Analyzer", layout="wide")
+# === Page Config ===
+st.set_page_config(page_title="📈 Astro Market Report", layout="wide")
 
-st.title("📊 Astro-Based Market Outlook")
+# === App Title ===
+st.title("🔮 Astro Market Timing & Sentiment Report")
+st.markdown("Select date, time range, and index. Click **Refresh Report** to update based on planetary changes.")
 
-# Select Date & Time Range
+# === Inputs ===
 col1, col2, col3 = st.columns(3)
 with col1:
-    selected_date = st.date_input("Select Date", datetime.today())
+    selected_date = st.date_input("📅 Select Date", datetime.today())
 with col2:
-    start_time = st.time_input("Start Time", dtime(9, 15))
+    start_time = st.time_input("⏰ Start Time", time(9, 15))
 with col3:
-    end_time = st.time_input("End Time", dtime(15, 30))
+    end_time = st.time_input("⏰ End Time", time(15, 30))
 
-# Index Selector
-selected_index = st.selectbox("📈 Select Stock Index", ["Nifty", "Bank Nifty", "Gold", "Crude", "BTC", "Dow"])
+index = st.selectbox("📊 Select Index", ["Nifty", "Bank Nifty", "Sensex", "Gold", "Crude", "BTC", "Dow Jones"])
+refresh = st.button("🔄 Refresh Report")
 
-# --- Simulated Astro Report Generator (mocking DeepSeek) ---
-def generate_mock_report(date):
-    # Simulate real-time astro timing (dynamic with date)
-    base = datetime.combine(date, dtime(0, 51))
-    periods = [
-        ("Venus", "Pushya", "Moon-Venus", "🟢 Bullish", "Steady upside, banking stocks strong", "Buy on dips", 3.8),
-        ("Sun", "Pushya", "Moon-Sun volatility", "🔴 Bearish", "Risk of gap-down or sudden drop", "Avoid new longs", 1.2),
-        ("Moon", "Pushya", "Emotional stability", "🟢 Bullish", "Recovery possible, good for intraday longs", "Short-term longs", 1.95),
-        ("Mars", "Pushya", "Aggressive moves", "🟠 Neutral", "Volatile swings, no clear direction", "Wait for confirmation", 1.37),
-        ("Rahu", "Pushya", "Rahu manipulation", "🔴 Bearish", "Sharp corrections, false breakouts likely", "Caution – Hedge", 3.52),
-        ("Jupiter", "Pushya", "Optimism, expansion", "🟢 Bullish", "Rally in heavyweights (HDFC, ICICI, RIL)", "Best for longs", 3.13),
-        ("Ketu", "Ashlesha", "Mercury Retro starts", "🔴 Bearish", "Panic selling, sudden drops", "Avoid trades", 2.01),
-        ("Ketu", "Ashlesha", "Declination weakens", "🟠 Choppy", "Sideways close, low volumes", "Stay flat", 2.13),
+# === Sample Transit Data (Replace with actual logic/data from Jagannatha Hora) ===
+def generate_transit_data(date, start, end):
+    raw_periods = [
+        ("00:51", "04:43", "Venus", "Pushya", "Moon-Venus influence", "🟢", "Steady upside, banking stocks strong", "Buy on dips"),
+        ("04:43", "05:53", "Sun", "Pushya", "Moon-Sun volatility", "🔴", "Risk of gap-down or sudden drop", "Avoid new longs"),
+        ("05:53", "07:50", "Moon", "Pushya", "Emotional stability", "🟢", "Recovery possible, good for intraday longs", "Short-term longs"),
+        ("07:50", "09:12", "Mars", "Pushya", "Aggressive moves", "🟠", "Volatile swings, no clear direction", "Wait for confirmation"),
+        ("09:12", "12:43", "Rahu", "Pushya", "Rahu manipulation", "🔴", "Sharp corrections, false breakouts likely", "Caution – Hedge"),
+        ("12:43", "15:51", "Jupiter", "Pushya", "Optimism, expansion", "🟢", "Rally in heavyweights (HDFC, ICICI, RIL)", "Best for longs"),
+        ("15:51", "17:52", "Ketu", "Ashlesha", "Mercury Retrograde starts", "🔴", "Panic selling, sudden drops", "Avoid trades"),
+        ("17:52", "23:59", "Ketu", "Ashlesha", "Declination weakens", "🟠", "Sideways close, low volumes", "Stay flat")
     ]
-    
-    data = []
-    current = base
-    for p in periods:
-        next_time = current + timedelta(hours=p[6])
-        data.append({
-            "Start": current.time().strftime("%H:%M"),
-            "End": next_time.time().strftime("%H:%M"),
-            "Moon’s Sub-Lord": p[0],
-            "Nakshatra": p[1],
-            "Planetary Aspect": p[2],
-            "Sentiment": p[3],
-            "Expected Market Move": p[4],
-            "Trading Bias": p[5],
-            "start_dt": current,
-            "end_dt": next_time
-        })
-        current = next_time
-    return pd.DataFrame(data)
 
-# --- Generate report for selected date ---
-report_df = generate_mock_report(selected_date)
+    filtered = []
+    for entry in raw_periods:
+        period_start = datetime.combine(date, datetime.strptime(entry[0], "%H:%M").time())
+        period_end = datetime.combine(date, datetime.strptime(entry[1], "%H:%M").time())
+        user_start = datetime.combine(date, start)
+        user_end = datetime.combine(date, end)
+        if period_end >= user_start and period_start <= user_end:
+            filtered.append({
+                "Time": f"{entry[0]} – {entry[1]}",
+                "Moon’s Sub-Lord": entry[2],
+                "Nakshatra": entry[3],
+                "Planetary Aspect": entry[4],
+                "Sentiment": entry[5],
+                "Expected Market Move": entry[6],
+                "Trading Bias": entry[7],
+            })
+    return filtered
 
-# --- Filter by selected time range ---
-start_dt = datetime.combine(selected_date, start_time)
-end_dt = datetime.combine(selected_date, end_time)
+# === Summary ===
+def generate_summary(data):
+    if not data:
+        return "No data in selected period."
+    best_long = ""
+    best_short = ""
+    for d in data:
+        if d["Sentiment"] == "🟢":
+            best_long = d["Time"] + " – " + d["Expected Market Move"]
+        elif d["Sentiment"] == "🔴":
+            best_short = d["Time"] + " – " + d["Expected Market Move"]
+    return best_long, best_short
 
-filtered_df = report_df[
-    (report_df["start_dt"] >= start_dt) & (report_df["end_dt"] <= end_dt)
-].copy()
+# === Report Generation ===
+if refresh:
+    data = generate_transit_data(selected_date, start_time, end_time)
+    df = pd.DataFrame(data)
 
-# --- Display Table ---
-st.subheader(f"🔭 Astro Report for {selected_index} — {selected_date.strftime('%d %b %Y')}")
-st.dataframe(
-    filtered_df.drop(columns=["start_dt", "end_dt"]).reset_index(drop=True),
-    use_container_width=True,
-    hide_index=True
-)
+    st.subheader(f"📌 Astro Report for {index} — {selected_date.strftime('%d-%b-%Y')}")
+    st.dataframe(df, use_container_width=True)
 
-# --- Summary Generation ---
-def generate_summary(df):
-    if df.empty:
-        return "No astro events in selected range."
-    best_long = df[df['Sentiment'] == '🟢 Bullish']
-    best_short = df[df['Sentiment'] == '🔴 Bearish']
-    long_row = best_long.iloc[0] if not best_long.empty else None
-    short_row = best_short.iloc[0] if not best_short.empty else None
-    summary = "📌 **Summary:**\n"
-    if long_row is not None:
-        summary += f"- ✅ Best Long Time: `{long_row['Start']} – {long_row['End']}` | `{long_row['Expected Market Move']}`\n"
-    if short_row is not None:
-        summary += f"- ❌ Best Short Time: `{short_row['Start']} – {short_row['End']}` | `{short_row['Expected Market Move']}`\n"
-    return summary
-
-# --- Show Summary ---
-st.markdown("---")
-st.markdown(generate_summary(filtered_df))
+    # Summary
+    long_summary, short_summary = generate_summary(data)
+    st.markdown("### 📈 Summary")
+    st.markdown(f"**🔵 Best Long Period:** {long_summary if long_summary else 'Not Found'}")
+    st.markdown(f"**🔴 Best Short Period:** {short_summary if short_summary else 'Not Found'}")
