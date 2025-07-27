@@ -4,11 +4,12 @@ import pandas as pd
 from datetime import datetime, timedelta, time as dt_time
 import pytz
 
-# Set ephemeris path
-swe.set_ephe_path('/usr/share/ephe')  # Make sure ephemeris files are present
+# Set ephemeris path (ensure this path is valid in your server)
+swe.set_ephe_path('/usr/share/ephe')
+
 INDIA_TZ = pytz.timezone("Asia/Kolkata")
 
-# === Get Moon Details Safely ===
+# === Get Moon Details ===
 def get_moon_details(jd):
     moon_result = swe.calc_ut(jd, swe.MOON)
 
@@ -18,7 +19,6 @@ def get_moon_details(jd):
 
     moon_long = moon_result[0]
 
-    # Calculate sign lord (zodiac), nakshatra index and sublord
     sign_lord = int(moon_long // 30)
     nak_index = int((moon_long % 30) // (13 + 1/3))
     sublord = int(((moon_long % (13 + 1/3)) / ((13 + 1/3) / 9)))
@@ -30,13 +30,24 @@ def check_aspects(jd):
     events = []
     planets = [swe.SUN, swe.MOON, swe.MERCURY, swe.VENUS, swe.MARS, swe.JUPITER, swe.SATURN]
     names = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn']
+    
     for i, p1 in enumerate(planets):
-        lon1 = swe.calc_ut(jd, p1)[0]
+        lon1_tuple = swe.calc_ut(jd, p1)
+        if not isinstance(lon1_tuple, (list, tuple)) or not isinstance(lon1_tuple[0], (int, float)):
+            continue
+        lon1 = lon1_tuple[0]
+
         for j, p2 in enumerate(planets):
             if i >= j:
                 continue
-            lon2 = swe.calc_ut(jd, p2)[0]
+
+            lon2_tuple = swe.calc_ut(jd, p2)
+            if not isinstance(lon2_tuple, (list, tuple)) or not isinstance(lon2_tuple[0], (int, float)):
+                continue
+            lon2 = lon2_tuple[0]
+
             diff = abs(lon1 - lon2) % 360
+
             if abs(diff - 0) < 1:
                 events.append((names[i], names[j], 'Conjunct', '🔴 Bearish'))
             elif abs(diff - 60) < 1:
@@ -101,15 +112,15 @@ symbol_list = [
 selected_symbol = st.selectbox("📈 Select Symbol", symbol_list)
 selected_date = st.date_input("📅 Select Date", value=datetime.now().date())
 
-# Generate Timeline with error handling
+# Generate Timeline
 with st.spinner("🔄 Calculating astro events..."):
     try:
         df = generate_astro_timeline(selected_date, selected_symbol)
         st.success("✅ Timeline Generated")
         st.dataframe(df, use_container_width=True)
 
+        # Download CSV
         csv = df.to_csv(index=False)
         st.download_button("📥 Download CSV", csv, f"{selected_symbol}_astro_{selected_date}.csv", "text/csv")
-
     except Exception as e:
         st.error(f"❌ Error generating timeline: {e}")
